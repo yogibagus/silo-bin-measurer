@@ -30,7 +30,7 @@ export function BinCard({
   onReset,
   onManualFillUpdate,
   onAddTruckLoad,
-  onRemoveTrailerLoad,
+  onRemoveTruckLoad,
   onResetTrailerCount,
   onUpdateGrainType,
 }: BinCardProps) {

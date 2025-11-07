@@ -58,9 +58,9 @@ export function Dashboard() {
           <div className="text-center space-y-2">
             <h1 className="text-4xl font-bold text-gray-900 flex items-center justify-center gap-3">
               <Factory className="w-10 h-10 text-blue-600" />
-              GrainCorp Silo Bin Measurer
+              Silo Bin Measurer
             </h1>
-            <p className="text-gray-600">Narrabri NSW Australia - Real-time Bin Monitoring System</p>
+            <p className="text-gray-600">Real-time Bin Monitoring System</p>
           </div>
           {/* Loading placeholder */}
           <div className="text-center py-8">
@@ -78,10 +78,10 @@ export function Dashboard() {
         <div className="text-center space-y-2">
           <h1 className="text-2xl sm:text-4xl font-bold text-gray-900 flex items-center justify-center gap-2 sm:gap-3">
             <Factory className="w-6 h-6 sm:w-10 sm:h-10 text-blue-600" />
-            <span className="hidden sm:inline">GrainCorp Silo Bin Measurer</span>
+            <span className="hidden sm:inline">Silo Bin Measurer</span>
             <span className="sm:hidden">Silo Bin Measurer</span>
           </h1>
-          <p className="text-xs sm:text-base text-gray-600">Narrabri NSW Australia - Real-time Bin Monitoring System</p>
+          <p className="text-xs sm:text-base text-gray-600">Real-time Bin Monitoring System</p>
         </div>
 
         {/* System Information */}
