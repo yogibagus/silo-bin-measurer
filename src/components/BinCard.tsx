@@ -38,6 +38,13 @@ export function BinCard({
   const [editValue, setEditValue] = useState(metrics.remainingCapacityFeet.toString());
   const [isEditingGrainType, setIsEditingGrainType] = useState(false);
   const [grainTypeValue, setGrainTypeValue] = useState(bin.grainType);
+  
+  // Hold to press states
+  const [isHoldingStart, setIsHoldingStart] = useState(false);
+  const [isHoldingInload, setIsHoldingInload] = useState(false);
+  const [isHoldingOutload, setIsHoldingOutload] = useState(false);
+  const [holdProgress, setHoldProgress] = useState(0);
+  const [holdTimer, setHoldTimer] = useState<NodeJS.Timeout | null>(null);
 
   // Update editValue when metrics change (but not during editing)
   useEffect(() => {
@@ -110,6 +117,65 @@ export function BinCard({
     setGrainTypeValue(bin.grainType);
     setIsEditingGrainType(false);
   };
+
+  // Hold to press functions
+  const startHold = (action: 'start' | 'inload' | 'outload') => {
+    console.log('startHold called with action:', action, 'for bin:', bin.id);
+    if (holdTimer) clearInterval(holdTimer);
+    
+    setHoldProgress(0);
+    const startTime = Date.now();
+    
+    if (action === 'start') setIsHoldingStart(true);
+    else if (action === 'inload') setIsHoldingInload(true);
+    else if (action === 'outload') setIsHoldingOutload(true);
+    
+    const timer = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min((elapsed / 2000) * 100, 100);
+      setHoldProgress(progress);
+      
+      if (progress >= 100) {
+        console.log('Hold completed for action:', action, 'executing...');
+        clearInterval(timer);
+        setHoldTimer(null);
+        setHoldProgress(0);
+        
+        // Execute action
+        if (action === 'start') {
+          console.log('Calling onStartFilling for bin:', bin.id);
+          onStartFilling(bin.id);
+          setIsHoldingStart(false);
+        } else if (action === 'inload') {
+          onAddTruckLoad(bin.id, 1);
+          setIsHoldingInload(false);
+        } else if (action === 'outload') {
+          onRemoveTruckLoad(bin.id, 1);
+          setIsHoldingOutload(false);
+        }
+      }
+    }, 50);
+    
+    setHoldTimer(timer);
+  };
+
+  const cancelHold = () => {
+    if (holdTimer) {
+      clearInterval(holdTimer);
+      setHoldTimer(null);
+    }
+    setHoldProgress(0);
+    setIsHoldingStart(false);
+    setIsHoldingInload(false);
+    setIsHoldingOutload(false);
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (holdTimer) clearInterval(holdTimer);
+    };
+  }, [holdTimer]);
 
   const getStatusColor = () => {
     if (bin.isFilling) return 'bg-green-500';
@@ -239,7 +305,7 @@ export function BinCard({
         {/* Truck Load Controls */}
         <div className="bg-blue-50 p-3 rounded-lg">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-            <p className="text-sm font-medium">Trailer Inload (30 tons/trailer)</p>
+            <p className="text-sm font-medium">Trailer (30 tons/trailer)</p>
             <div className="flex items-center gap-2">
               <span className="text-lg font-bold text-blue-600">{bin.trailerCount}</span>
               <Button
@@ -254,44 +320,77 @@ export function BinCard({
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => onAddTruckLoad(bin.id, 1)}
-              disabled={bin.isFilling || metrics.fillPercentage >= 100}
-              className="text-xs"
-            >
-              <Plus className="w-3 h-3 mr-1" />
-              <span className="hidden sm:inline">Add 1 Trailer</span>
-              <span className="sm:hidden">Add</span>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => onRemoveTruckLoad(bin.id, 1)}
-              disabled={bin.isFilling || metrics.fillPercentage <= 0}
-              className="text-xs"
-            >
-              <Minus className="w-3 h-3 mr-1" />
-              <span className="hidden sm:inline">Remove 1 Trailer</span>
-              <span className="sm:hidden">Remove</span>
-            </Button>
+            <div className="relative">
+              <Button
+                size="sm"
+                variant="outline"
+                onMouseDown={() => startHold('inload')}
+                onMouseUp={cancelHold}
+                onMouseLeave={cancelHold}
+                onTouchStart={() => startHold('inload')}
+                onTouchEnd={cancelHold}
+                disabled={bin.isFilling || metrics.fillPercentage >= 100}
+                className={`text-xs w-full ${isHoldingInload ? 'bg-green-100 border-green-300' : ''}`}
+              >
+                <Plus className="w-3 h-3 mr-1" />
+                <span className="hidden sm:inline">1 Trailer Inload</span>
+                <span className="sm:hidden">Add</span>
+              </Button>
+              {isHoldingInload && (
+                <div className="absolute top-full left-0 right-0 mt-1 z-10">
+                  <Progress value={holdProgress} className="h-1" />
+                </div>
+              )}
+            </div>
+            <div className="relative">
+              <Button
+                size="sm"
+                variant="outline"
+                onMouseDown={() => startHold('outload')}
+                onMouseUp={cancelHold}
+                onMouseLeave={cancelHold}
+                onTouchStart={() => startHold('outload')}
+                onTouchEnd={cancelHold}
+                disabled={bin.isFilling || metrics.fillPercentage <= 0}
+                className={`text-xs w-full ${isHoldingOutload ? 'bg-red-100 border-red-300' : ''}`}
+              >
+                <Minus className="w-3 h-3 mr-1" />
+                <span className="hidden sm:inline">1 Trailer Outload</span>
+                <span className="sm:hidden">Remove</span>
+              </Button>
+              {isHoldingOutload && (
+                <div className="absolute top-full left-0 right-0 mt-1 z-10">
+                  <Progress value={holdProgress} className="h-1" />
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Control Buttons */}
-        <div className="flex gap-2">
-          {!bin.isFilling ? (
+        {!bin.isFilling ? (
+          <div className="relative w-full">
             <Button
-              onClick={() => onStartFilling(bin.id)}
-              className="flex-1 text-sm"
+              onMouseDown={() => startHold('start')}
+              onMouseUp={cancelHold}
+              onMouseLeave={cancelHold}
+              onTouchStart={() => startHold('start')}
+              onTouchEnd={cancelHold}
+              className={`w-full text-sm ${isHoldingStart ? 'bg-green-100 border-green-300' : ''}`}
               disabled={metrics.fillPercentage >= 100}
             >
               <Play className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
               <span className="hidden sm:inline">Start Filling</span>
               <span className="sm:hidden">Start</span>
             </Button>
-          ) : (
+            {isHoldingStart && (
+              <div className="absolute top-full left-0 right-0 mt-1 z-10">
+                <Progress value={holdProgress} className="h-1" />
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex gap-2">
             <Button
               onClick={() => onStopFilling(bin.id)}
               variant="destructive"
@@ -301,16 +400,16 @@ export function BinCard({
               <span className="hidden sm:inline">Stop Filling</span>
               <span className="sm:hidden">Stop</span>
             </Button>
-          )}
-          <Button
-            onClick={() => onReset(bin.id)}
-            variant="outline"
-            disabled={bin.isFilling}
-            className="px-2 sm:px-4"
-          >
-            <RotateCcw className="w-3 h-3 sm:w-4 sm:h-4" />
-          </Button>
-        </div>
+            <Button
+              onClick={() => onReset(bin.id)}
+              variant="outline"
+              disabled={bin.isFilling}
+              className="px-2 sm:px-4"
+            >
+              <RotateCcw className="w-3 h-3 sm:w-4 sm:h-4" />
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

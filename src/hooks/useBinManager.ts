@@ -114,6 +114,7 @@ export function useBinManager() {
       setBins((currentBins) => {
         // Check if any bin is currently filling
         const hasActiveFilling = currentBins.some(bin => bin.isFilling);
+        console.log('Interval check - hasActiveFilling:', hasActiveFilling, 'bins:', currentBins.map(b => ({id: b.id, isFilling: b.isFilling})));
         if (!hasActiveFilling) return currentBins;
         
         return currentBins.map((bin) => {
@@ -148,11 +149,13 @@ export function useBinManager() {
     }, 1000); // Update every second for smooth real-time updates
 
     return () => clearInterval(interval);
-  }, [systemSettings]);
+  }, [systemSettings, tonsToFeet]);
 
   const startFilling = useCallback((binId: number) => {
-    setBins((currentBins) =>
-      currentBins.map((bin) =>
+    console.log('startFilling called for binId:', binId);
+    setBins((currentBins) => {
+      console.log('Current bins before start:', currentBins);
+      const updatedBins = currentBins.map((bin) =>
         bin.id === binId
           ? {
               ...bin,
@@ -160,8 +163,10 @@ export function useBinManager() {
               startTime: new Date(),
             }
           : bin
-      )
-    );
+      );
+      console.log('Updated bins after start:', updatedBins);
+      return updatedBins;
+    });
   }, []);
 
   const stopFilling = useCallback((binId: number) => {
