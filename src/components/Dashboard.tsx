@@ -122,7 +122,7 @@ export function Dashboard() {
             </h1>
           </div>
           <p className="text-sm sm:text-base text-gray-600">
-            GrainCorp Narrabri - Real-time Bin Monitoring System
+            Narrabri Sub - Real-time Bin Monitoring System
           </p>
         </div>
 
@@ -245,11 +245,15 @@ export function Dashboard() {
                   <p className="font-medium text-xs sm:text-sm">Conversion Rate</p>
                   <p className="text-gray-600 text-xs sm:text-sm">1 ft = {systemSettings.tonsPerFoot} tons</p>
                 </div>
-                <div className="sm:col-span-2 lg:col-span-2">
+                <div>
                   <p className="font-medium text-xs sm:text-sm">Fill Rate</p>
                   <p className="text-gray-600 text-xs sm:text-sm">
                     {(systemSettings.elevatorSpeed / 60).toFixed(1)} t/min ({(systemSettings.elevatorSpeed / 60 / systemSettings.tonsPerFoot).toFixed(2)} ft/min)
                   </p>
+                </div>
+                <div>
+                  <p className="font-medium text-xs sm:text-sm">Last Updated</p>
+                  <p className="text-gray-600 text-xs sm:text-sm">{new Date().toLocaleString()}</p>
                 </div>
               </div>
             )}
@@ -288,7 +292,6 @@ export function Dashboard() {
         <div className="text-center text-sm text-gray-500 pt-4">
           <p>© 2025 Silo Bin Measurer v1.0</p>
           <p>Created by Yogi Pangestu</p>
-          <p className="mt-1">Last updated: {new Date().toLocaleString()}</p>
         </div>
       </div>
     </div>

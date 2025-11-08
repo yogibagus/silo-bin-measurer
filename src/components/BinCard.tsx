@@ -242,9 +242,9 @@ export function BinCard({
   return (
     <Card className="w-full">
       <CardHeader className="pb-3">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <div className="flex-1">
-            <CardTitle className="text-lg sm:text-xl font-bold">{bin.name}</CardTitle>
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <CardTitle className="text-lg sm:text-xl font-bold truncate">{bin.name}</CardTitle>
             {isEditingGrainType ? (
               <div className="flex items-center gap-2 mt-1">
                 <Input
@@ -270,14 +270,14 @@ export function BinCard({
                   variant="outline"
                   onClick={handleEditGrainType}
                   disabled={bin.isFilling}
-                  className="h-6 px-2"
+                  className="h-6 px-2 flex-shrink-0"
                 >
                   <Edit className="w-3 h-3" />
                 </Button>
               </div>
             )}
           </div>
-          <Badge className={`${getStatusColor()} text-white text-xs sm:text-sm`}>
+          <Badge className={`${getStatusColor()} text-white text-xs sm:text-sm flex-shrink-0`}>
             {getStatusText()}
           </Badge>
         </div>

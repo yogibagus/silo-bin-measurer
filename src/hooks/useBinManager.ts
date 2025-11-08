@@ -222,6 +222,24 @@ export function useBinManager() {
     
     // Add activity log
     addActivityLog(binId, 'stop_filling', 'Stopped filling bin');
+    
+    // Force immediate state update to prevent race condition
+    setTimeout(() => {
+      setBins((currentBins) => {
+        const targetBin = currentBins.find(b => b.id === binId);
+        if (targetBin && targetBin.isFilling) {
+          return currentBins.map((bin) =>
+            bin.id === binId
+              ? {
+                  ...bin,
+                  isFilling: false,
+                }
+              : bin
+          );
+        }
+        return currentBins;
+      });
+    }, 100);
   }, [addActivityLog]);
 
   const resetBin = useCallback((binId: number) => {
@@ -241,6 +259,27 @@ export function useBinManager() {
     
     // Add activity log
     addActivityLog(binId, 'reset', 'Reset bin to empty');
+    
+    // Force immediate state update to prevent race condition
+    setTimeout(() => {
+      setBins((currentBins) => {
+        const targetBin = currentBins.find(b => b.id === binId);
+        if (targetBin && (targetBin.isFilling || targetBin.currentFillFeet !== 0 || targetBin.currentFillTons !== 0)) {
+          return currentBins.map((bin) =>
+            bin.id === binId
+              ? {
+                  ...bin,
+                  isFilling: false,
+                  currentFillFeet: 0,
+                  currentFillTons: 0,
+                  startTime: undefined,
+                }
+              : bin
+          );
+        }
+        return currentBins;
+      });
+    }, 100);
   }, [addActivityLog]);
 
   const updateManualFill = useCallback((binId: number, remainingFeet: number) => {
