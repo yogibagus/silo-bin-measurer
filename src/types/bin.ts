@@ -1,3 +1,13 @@
+export interface ActivityLog {
+  id: string;
+  timestamp: Date;
+  action: 'start_filling' | 'stop_filling' | 'reset' | 'manual_fill' | 'truck_load' | 'truck_remove' | 'trailer_reset' | 'wagon_load' | 'wagon_remove' | 'wagon_reset' | 'grain_change';
+  details: string;
+  oldValue?: number;
+  newValue?: number;
+  unit?: string;
+}
+
 export interface Bin {
   id: number;
   name: string;
@@ -7,8 +17,10 @@ export interface Bin {
   currentFillTons: number;
   maxCapacityFeet: number;
   maxCapacityTons: number;
-  startTime?: Date;
   trailerCount: number;
+  wagonCount: number;
+  startTime?: Date;
+  activityLogs: ActivityLog[];
 }
 
 export interface BinMetrics {
@@ -20,11 +32,14 @@ export interface BinMetrics {
   remainingCapacityTons: number;
   remainingCapacityFeet: number;
   estimatedTrailersToFull: number;
+  estimatedWagonsToFull: number;
 }
 
 export interface SystemSettings {
   elevatorSpeed: number; // tons per hour
-  tonsPerFoot: number;
+  tonsPerFoot: number; // tons per foot
+  tonsPerTrailer: number; // tons per trailer
+  tonsPerWagon: number; // tons per wagon
 }
 
 export const ELEVATOR_SPEED_TONS_PER_HOUR = 180;

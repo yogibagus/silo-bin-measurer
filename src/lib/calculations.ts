@@ -48,10 +48,16 @@ export function calculateEstimatedTimeToFull(bin: Bin, systemSettings: SystemSet
   return formatTime(remainingMinutes);
 }
 
-export function calculateEstimatedTrailersToFull(bin: Bin): number {
+export function calculateEstimatedTrailersToFull(bin: Bin, systemSettings: SystemSettings): number {
   const remainingCapacityTons = bin.maxCapacityTons - bin.currentFillTons;
-  const tonsPerTrailer = 30; // 30 tons per trailer
+  const tonsPerTrailer = systemSettings.tonsPerTrailer;
   return Math.ceil(remainingCapacityTons / tonsPerTrailer);
+}
+
+export function calculateEstimatedWagonsToFull(bin: Bin, systemSettings: SystemSettings): number {
+  const remainingCapacityTons = bin.maxCapacityTons - bin.currentFillTons;
+  const tonsPerWagon = systemSettings.tonsPerWagon;
+  return Math.ceil(remainingCapacityTons / tonsPerWagon);
 }
 
 export function calculateBinMetrics(bin: Bin, systemSettings: SystemSettings): BinMetrics {
@@ -60,7 +66,8 @@ export function calculateBinMetrics(bin: Bin, systemSettings: SystemSettings): B
   const estimatedTimeToFull = calculateEstimatedTimeToFull(bin, systemSettings);
   const remainingCapacityTons = bin.maxCapacityTons - bin.currentFillTons;
   const remainingCapacityFeet = bin.maxCapacityFeet - bin.currentFillFeet;
-  const estimatedTrailersToFull = calculateEstimatedTrailersToFull(bin);
+  const estimatedTrailersToFull = calculateEstimatedTrailersToFull(bin, systemSettings);
+  const estimatedWagonsToFull = calculateEstimatedWagonsToFull(bin, systemSettings);
   
   const tonsPerMinute = systemSettings.elevatorSpeed / 60;
   const feetPerMinute = tonsPerMinute / systemSettings.tonsPerFoot;
@@ -74,6 +81,7 @@ export function calculateBinMetrics(bin: Bin, systemSettings: SystemSettings): B
     remainingCapacityTons,
     remainingCapacityFeet,
     estimatedTrailersToFull,
+    estimatedWagonsToFull,
   };
 }
 

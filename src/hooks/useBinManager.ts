@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Bin, TONS_PER_MINUTE, SystemSettings, ELEVATOR_SPEED_TONS_PER_HOUR, TONS_PER_FOOT } from '@/types/bin';
+import { Bin, ActivityLog, TONS_PER_MINUTE, SystemSettings, ELEVATOR_SPEED_TONS_PER_HOUR, TONS_PER_FOOT } from '@/types/bin';
 import { calculateBinMetrics, updateBinFillLevel, feetToTons, tonsToFeet } from '@/lib/calculations';
+import { fetchBins, updateBins, fetchSystemSettings, updateSystemSettings as updateSystemSettingsAPI } from '@/lib/api';
 
 const DEFAULT_BIN_CAPACITY_FEET = 130; // Default capacity, can be adjusted
 
@@ -15,6 +16,8 @@ const getDefaultBins = (): Bin[] => [
     maxCapacityFeet: DEFAULT_BIN_CAPACITY_FEET,
     maxCapacityTons: feetToTons(DEFAULT_BIN_CAPACITY_FEET),
     trailerCount: 0,
+    wagonCount: 0,
+    activityLogs: [],
   },
   {
     id: 2,
@@ -26,95 +29,112 @@ const getDefaultBins = (): Bin[] => [
     maxCapacityFeet: DEFAULT_BIN_CAPACITY_FEET,
     maxCapacityTons: feetToTons(DEFAULT_BIN_CAPACITY_FEET),
     trailerCount: 0,
+    wagonCount: 0,
+    activityLogs: [],
   },
 ];
-
-const loadBinsFromStorage = (): Bin[] => {
-  if (typeof window === 'undefined') return getDefaultBins();
-  
-  try {
-    const stored = localStorage.getItem('silo-bins');
-    if (stored) {
-      const parsedBins = JSON.parse(stored);
-      // Check if old data with 50ft capacity exists
-      const hasOldCapacity = parsedBins.some((bin: any) => bin.maxCapacityFeet === 50);
-      if (hasOldCapacity) {
-        console.log('Old capacity detected, clearing localStorage and using new defaults');
-        localStorage.removeItem('silo-bins');
-        return getDefaultBins();
-      }
-      // Convert date strings back to Date objects
-      return parsedBins.map((bin: any) => ({
-        ...bin,
-        startTime: bin.startTime ? new Date(bin.startTime) : undefined,
-      }));
-    }
-  } catch (error) {
-    console.error('Error loading bins from localStorage:', error);
-  }
-  return getDefaultBins();
-};
-
-const saveBinsToStorage = (bins: Bin[]) => {
-  if (typeof window === 'undefined') return;
-  
-  try {
-    localStorage.setItem('silo-bins', JSON.stringify(bins));
-  } catch (error) {
-    console.error('Error saving bins to localStorage:', error);
-  }
-};
 
 const getDefaultSystemSettings = (): SystemSettings => ({
   elevatorSpeed: ELEVATOR_SPEED_TONS_PER_HOUR,
   tonsPerFoot: TONS_PER_FOOT,
+  tonsPerTrailer: 30, // Default 30 tons per trailer
+  tonsPerWagon: 50, // Default 50 tons per wagon
 });
 
-const loadSystemSettingsFromStorage = (): SystemSettings => {
-  if (typeof window === 'undefined') return getDefaultSystemSettings();
-  
-  try {
-    const stored = localStorage.getItem('silo-system-settings');
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch (error) {
-    console.error('Error loading system settings from localStorage:', error);
-  }
-  return getDefaultSystemSettings();
-};
-
-const saveSystemSettingsToStorage = (settings: SystemSettings) => {
-  if (typeof window === 'undefined') return;
-  
-  try {
-    localStorage.setItem('silo-system-settings', JSON.stringify(settings));
-  } catch (error) {
-    console.error('Error saving system settings to localStorage:', error);
-  }
-};
-
 export function useBinManager() {
-  const [bins, setBins] = useState<Bin[]>(() => loadBinsFromStorage());
-  const [systemSettings, setSystemSettings] = useState<SystemSettings>(() => loadSystemSettingsFromStorage());
+  const [bins, setBins] = useState<Bin[]>(getDefaultBins());
+  const [systemSettings, setSystemSettings] = useState<SystemSettings>(getDefaultSystemSettings());
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Save to localStorage whenever bins change
-  useEffect(() => {
-    saveBinsToStorage(bins);
-  }, [bins]);
+  // Helper function to add activity log
+  const addActivityLog = useCallback((binId: number, action: ActivityLog['action'], details: string, oldValue?: number, newValue?: number, unit?: string) => {
+    const newLog: ActivityLog = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: new Date(),
+      action,
+      details,
+      oldValue,
+      newValue,
+      unit,
+    };
 
-  // Save to localStorage whenever system settings change
+    setBins((currentBins) =>
+      currentBins.map((bin) =>
+        bin.id === binId
+          ? {
+              ...bin,
+              activityLogs: [newLog, ...(bin.activityLogs || [])].slice(0, 50), // Keep only last 50 logs
+            }
+          : bin
+      )
+    );
+  }, []);
+
+  // Load data from MongoDB on mount
   useEffect(() => {
-    saveSystemSettingsToStorage(systemSettings);
-  }, [systemSettings]);
+    const loadData = async () => {
+      try {
+        setIsLoading(true);
+        
+        // Load bins and system settings in parallel
+        const [loadedBins, loadedSettings] = await Promise.all([
+          fetchBins(),
+          fetchSystemSettings()
+        ]);
+        
+        if (loadedBins.length > 0) {
+          // Convert date strings back to Date objects if they exist
+          const binsWithDates = loadedBins.map((bin: any) => ({
+            ...bin,
+            startTime: bin.startTime ? new Date(bin.startTime) : undefined,
+            activityLogs: bin.activityLogs || [], // Ensure activityLogs is always an array
+          }));
+          setBins(binsWithDates);
+        } else {
+          // If no bins exist, save default bins to MongoDB
+          await updateBins(getDefaultBins());
+        }
+        
+        setSystemSettings(loadedSettings);
+      } catch (error) {
+        console.error('Error loading data from MongoDB:', error);
+        // Fallback to defaults
+        setBins(getDefaultBins());
+        setSystemSettings(getDefaultSystemSettings());
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
+  // Save to MongoDB whenever bins change (but not during loading)
+  useEffect(() => {
+    if (!isLoading) {
+      updateBins(bins).catch(error => {
+        console.error('Error saving bins to MongoDB:', error);
+      });
+    }
+  }, [bins, isLoading]);
+
+  // Save to MongoDB whenever system settings change (but not during loading)
+  useEffect(() => {
+    if (!isLoading) {
+      updateSystemSettingsAPI(systemSettings).catch(error => {
+        console.error('Error saving system settings to MongoDB:', error);
+      });
+    }
+  }, [systemSettings, isLoading]);
 
   // Update fill levels for active bins
   useEffect(() => {
+    if (isLoading) return;
+    
     const interval = setInterval(() => {
       setBins((currentBins) => {
         // Check if any bin is currently filling
         const hasActiveFilling = currentBins.some(bin => bin.isFilling);
-        console.log('Interval check - hasActiveFilling:', hasActiveFilling, 'bins:', currentBins.map(b => ({id: b.id, isFilling: b.isFilling})));
         if (!hasActiveFilling) return currentBins;
         
         return currentBins.map((bin) => {
@@ -149,12 +169,10 @@ export function useBinManager() {
     }, 1000); // Update every second for smooth real-time updates
 
     return () => clearInterval(interval);
-  }, [systemSettings, tonsToFeet]);
+  }, [systemSettings, isLoading, tonsToFeet]);
 
   const startFilling = useCallback((binId: number) => {
-    console.log('startFilling called for binId:', binId);
     setBins((currentBins) => {
-      console.log('Current bins before start:', currentBins);
       const updatedBins = currentBins.map((bin) =>
         bin.id === binId
           ? {
@@ -164,10 +182,31 @@ export function useBinManager() {
             }
           : bin
       );
-      console.log('Updated bins after start:', updatedBins);
       return updatedBins;
     });
-  }, []);
+    
+    // Add activity log
+    addActivityLog(binId, 'start_filling', 'Started filling bin');
+    
+    // Force immediate state update to prevent race condition
+    setTimeout(() => {
+      setBins((currentBins) => {
+        const targetBin = currentBins.find(b => b.id === binId);
+        if (targetBin && !targetBin.isFilling) {
+          return currentBins.map((bin) =>
+            bin.id === binId
+              ? {
+                  ...bin,
+                  isFilling: true,
+                  startTime: new Date(),
+                }
+              : bin
+          );
+        }
+        return currentBins;
+      });
+    }, 100);
+  }, [addActivityLog]);
 
   const stopFilling = useCallback((binId: number) => {
     setBins((currentBins) =>
@@ -180,7 +219,10 @@ export function useBinManager() {
           : bin
       )
     );
-  }, []);
+    
+    // Add activity log
+    addActivityLog(binId, 'stop_filling', 'Stopped filling bin');
+  }, [addActivityLog]);
 
   const resetBin = useCallback((binId: number) => {
     setBins((currentBins) =>
@@ -196,26 +238,41 @@ export function useBinManager() {
           : bin
       )
     );
-  }, []);
+    
+    // Add activity log
+    addActivityLog(binId, 'reset', 'Reset bin to empty');
+  }, [addActivityLog]);
 
-  const updateManualFill = useCallback((binId: number, feet: number) => {
-    console.log('updateManualFill called with binId:', binId, 'feet:', feet);
+  const updateManualFill = useCallback((binId: number, remainingFeet: number) => {
     setBins((currentBins) => {
-      const updatedBins = currentBins.map((bin) =>
-        bin.id === binId
-          ? {
+      const targetBin = currentBins.find(bin => bin.id === binId);
+      const oldFillTons = targetBin?.currentFillTons || 0;
+      
+      const updatedBins = currentBins.map((bin) => {
+        if (bin.id === binId) {
+          const currentFillFeet = Math.max(0, bin.maxCapacityFeet - remainingFeet);
+          const currentFillTons = feetToTons(currentFillFeet);
+          
+          return {
               ...bin,
-              currentFillFeet: Math.min(feet, bin.maxCapacityFeet),
-              currentFillTons: Math.min(feetToTons(feet), bin.maxCapacityTons),
+              currentFillFeet: Math.min(currentFillFeet, bin.maxCapacityFeet),
+              currentFillTons: Math.min(currentFillTons, bin.maxCapacityTons),
               isFilling: false,
               startTime: undefined,
-            }
-          : bin
-      );
-      console.log('Updated bins:', updatedBins);
+            };
+        }
+        return bin;
+      });
+      
+      // Add activity log after getting the new values
+      const updatedBin = updatedBins.find(b => b.id === binId);
+      if (updatedBin && targetBin) {
+        addActivityLog(binId, 'manual_fill', `Updated remaining capacity to ${remainingFeet.toFixed(1)} ft`, oldFillTons, updatedBin.currentFillTons, 'tons');
+      }
+      
       return updatedBins;
     });
-  }, []);
+  }, [addActivityLog]);
 
   const getBinMetrics = useCallback((binId: number) => {
     const bin = bins.find((b) => b.id === binId);
@@ -238,12 +295,15 @@ export function useBinManager() {
   }, []);
 
   const addTruckLoad = useCallback((binId: number, trailers: number) => {
-    const tonsPerTrailer = 30; // 30 tons per trailer
+    const tonsPerTrailer = systemSettings.tonsPerTrailer;
     const totalTons = trailers * tonsPerTrailer;
     const addedFeet = tonsToFeet(totalTons);
     
-    setBins((currentBins) =>
-      currentBins.map((bin) =>
+    setBins((currentBins) => {
+      const targetBin = currentBins.find(bin => bin.id === binId);
+      const oldFillTons = targetBin?.currentFillTons || 0;
+      
+      return currentBins.map((bin) =>
         bin.id === binId
           ? {
               ...bin,
@@ -254,60 +314,290 @@ export function useBinManager() {
               startTime: undefined,
             }
           : bin
-      )
-    );
-  }, []);
+      );
+    });
+    
+    // Add activity log
+    const bin = bins.find(b => b.id === binId);
+    if (bin) {
+      addActivityLog(binId, 'truck_load', `Added ${trailers} trailer load(s)`, bin.currentFillTons, bin.currentFillTons + totalTons, 'tons');
+    }
+  }, [systemSettings.tonsPerTrailer, addActivityLog, bins]);
 
   const removeTruckLoad = useCallback((binId: number, trailers: number) => {
-    const tonsPerTrailer = 30; // 30 tons per trailer
+    const tonsPerTrailer = systemSettings.tonsPerTrailer;
     const totalTons = trailers * tonsPerTrailer;
     const removedFeet = tonsToFeet(totalTons);
     
-    setBins((currentBins) =>
-      currentBins.map((bin) =>
+    setBins((currentBins) => {
+      const targetBin = currentBins.find(bin => bin.id === binId);
+      const oldFillTons = targetBin?.currentFillTons || 0;
+      
+      return currentBins.map((bin) =>
         bin.id === binId
           ? {
               ...bin,
               currentFillFeet: Math.max(bin.currentFillFeet - removedFeet, 0),
               currentFillTons: Math.max(bin.currentFillTons - totalTons, 0),
-              trailerCount: Math.max(bin.trailerCount - trailers, 0),
+              trailerCount: bin.trailerCount - trailers, // Allow negative values
               isFilling: false,
               startTime: undefined,
             }
           : bin
-      )
-    );
-  }, []);
+      );
+    });
+    
+    // Add activity log
+    const bin = bins.find(b => b.id === binId);
+    if (bin) {
+      addActivityLog(binId, 'truck_remove', `Removed ${trailers} trailer load(s)`, bin.currentFillTons, bin.currentFillTons - totalTons, 'tons');
+    }
+  }, [systemSettings.tonsPerTrailer, addActivityLog, bins]);
 
   const resetTrailerCount = useCallback((binId: number) => {
-    setBins((currentBins) =>
-      currentBins.map((bin) =>
+    setBins((currentBins) => {
+      const targetBin = currentBins.find(bin => bin.id === binId);
+      const oldTrailerCount = targetBin?.trailerCount || 0;
+      
+      return currentBins.map((bin) =>
         bin.id === binId
           ? {
               ...bin,
               trailerCount: 0,
             }
           : bin
-      )
-    );
-  }, []);
+      );
+    });
+    
+    // Add activity log
+    addActivityLog(binId, 'trailer_reset', `Reset trailer count from ${bins.find(b => b.id === binId)?.trailerCount || 0} to 0`);
+  }, [addActivityLog, bins]);
 
   const updateGrainType = useCallback((binId: number, grainType: string) => {
-    setBins((currentBins) =>
-      currentBins.map((bin) =>
+    setBins((currentBins) => {
+      const targetBin = currentBins.find(bin => bin.id === binId);
+      const oldGrainType = targetBin?.grainType || '';
+      
+      return currentBins.map((bin) =>
         bin.id === binId
           ? {
               ...bin,
               grainType,
             }
           : bin
+      );
+    });
+    
+    // Add activity log
+    const bin = bins.find(b => b.id === binId);
+    if (bin) {
+      addActivityLog(binId, 'grain_change', `Changed grain type from "${bin.grainType}" to "${grainType}"`);
+    }
+  }, [addActivityLog, bins]);
+
+  const addWagonLoad = useCallback((binId: number, wagons: number) => {
+    const tonsPerWagon = systemSettings.tonsPerWagon;
+    const totalTons = wagons * tonsPerWagon;
+    const addedFeet = tonsToFeet(totalTons);
+    
+    setBins((currentBins) => {
+      const targetBin = currentBins.find(bin => bin.id === binId);
+      const oldFillTons = targetBin?.currentFillTons || 0;
+      
+      return currentBins.map((bin) =>
+        bin.id === binId
+          ? {
+              ...bin,
+              currentFillFeet: Math.min(bin.currentFillFeet + addedFeet, bin.maxCapacityFeet),
+              currentFillTons: Math.min(bin.currentFillTons + totalTons, bin.maxCapacityTons),
+              wagonCount: bin.wagonCount + wagons,
+              isFilling: false,
+              startTime: undefined,
+            }
+          : bin
+      );
+    });
+    
+    // Add activity log
+    const bin = bins.find(b => b.id === binId);
+    if (bin) {
+      addActivityLog(binId, 'wagon_load', `Added ${wagons} wagon load(s)`, bin.currentFillTons, bin.currentFillTons + totalTons, 'tons');
+    }
+  }, [systemSettings.tonsPerWagon, addActivityLog, bins]);
+
+  const removeWagonLoad = useCallback((binId: number, wagons: number) => {
+    const tonsPerWagon = systemSettings.tonsPerWagon;
+    const totalTons = wagons * tonsPerWagon;
+    const removedFeet = tonsToFeet(totalTons);
+    
+    setBins((currentBins) => {
+      const targetBin = currentBins.find(bin => bin.id === binId);
+      const oldFillTons = targetBin?.currentFillTons || 0;
+      
+      return currentBins.map((bin) =>
+        bin.id === binId
+          ? {
+              ...bin,
+              currentFillFeet: Math.max(bin.currentFillFeet - removedFeet, 0),
+              currentFillTons: Math.max(bin.currentFillTons - totalTons, 0),
+              wagonCount: bin.wagonCount - wagons, // Allow negative values
+              isFilling: false,
+              startTime: undefined,
+            }
+          : bin
+      );
+    });
+    
+    // Add activity log
+    const bin = bins.find(b => b.id === binId);
+    if (bin) {
+      addActivityLog(binId, 'wagon_remove', `Removed ${wagons} wagon load(s)`, bin.currentFillTons, bin.currentFillTons - totalTons, 'tons');
+    }
+  }, [systemSettings.tonsPerWagon, addActivityLog, bins]);
+
+  const resetWagonCount = useCallback((binId: number) => {
+    setBins((currentBins) => {
+      const targetBin = currentBins.find(bin => bin.id === binId);
+      const oldWagonCount = targetBin?.wagonCount || 0;
+      
+      return currentBins.map((bin) =>
+        bin.id === binId
+          ? {
+              ...bin,
+              wagonCount: 0,
+            }
+          : bin
+      );
+    });
+    
+    // Add activity log
+    addActivityLog(binId, 'wagon_reset', `Reset wagon count from ${bins.find(b => b.id === binId)?.wagonCount || 0} to 0`);
+  }, [addActivityLog, bins]);
+
+  const deleteActivityLog = useCallback((binId: number, logId: string) => {
+    setBins((currentBins) =>
+      currentBins.map((bin) =>
+        bin.id === binId
+          ? {
+              ...bin,
+              activityLogs: (bin.activityLogs || []).filter(log => log.id !== logId),
+            }
+          : bin
       )
     );
   }, []);
 
+  const undoLastActivity = useCallback((binId: number) => {
+    setBins((currentBins) => {
+      const bin = currentBins.find(b => b.id === binId);
+      if (!bin || !bin.activityLogs || bin.activityLogs.length === 0) {
+        return currentBins;
+      }
+
+      const lastLog = bin.activityLogs[0];
+      let updatedBin = { ...bin };
+
+      // Undo based on action type
+      switch (lastLog.action) {
+        case 'start_filling':
+          updatedBin.isFilling = false;
+          updatedBin.startTime = undefined;
+          break;
+        
+        case 'stop_filling':
+          // Can't easily undo stop filling without knowing the exact state
+          break;
+        
+        case 'reset':
+          // Can't easily undo reset without knowing previous state
+          break;
+        
+        case 'manual_fill':
+          if (lastLog.oldValue !== undefined) {
+            updatedBin.currentFillTons = lastLog.oldValue;
+            updatedBin.currentFillFeet = tonsToFeet(lastLog.oldValue);
+            updatedBin.isFilling = false;
+            updatedBin.startTime = undefined;
+          }
+          break;
+        
+        case 'truck_load':
+          if (lastLog.oldValue !== undefined && lastLog.newValue !== undefined) {
+            const tonsToRevert = lastLog.newValue - lastLog.oldValue;
+            const feetToRevert = tonsToFeet(tonsToRevert);
+            updatedBin.currentFillTons = lastLog.oldValue;
+            updatedBin.currentFillFeet = Math.max(0, updatedBin.currentFillFeet - feetToRevert);
+            updatedBin.trailerCount = Math.max(0, updatedBin.trailerCount - 1);
+            updatedBin.isFilling = false;
+            updatedBin.startTime = undefined;
+          }
+          break;
+        
+        case 'truck_remove':
+          if (lastLog.oldValue !== undefined && lastLog.newValue !== undefined) {
+            const tonsToAdd = lastLog.oldValue - lastLog.newValue;
+            const feetToAdd = tonsToFeet(tonsToAdd);
+            updatedBin.currentFillTons = lastLog.oldValue;
+            updatedBin.currentFillFeet = Math.min(updatedBin.maxCapacityFeet, updatedBin.currentFillFeet + feetToAdd);
+            updatedBin.trailerCount = updatedBin.trailerCount + 1;
+            updatedBin.isFilling = false;
+            updatedBin.startTime = undefined;
+          }
+          break;
+        
+        case 'trailer_reset':
+          // Can't easily undo trailer reset without knowing previous value
+          break;
+        
+        case 'wagon_load':
+          if (lastLog.oldValue !== undefined && lastLog.newValue !== undefined) {
+            const tonsToRevert = lastLog.newValue - lastLog.oldValue;
+            const feetToRevert = tonsToFeet(tonsToRevert);
+            updatedBin.currentFillTons = lastLog.oldValue;
+            updatedBin.currentFillFeet = Math.max(0, updatedBin.currentFillFeet - feetToRevert);
+            updatedBin.wagonCount = Math.max(0, updatedBin.wagonCount - 1);
+            updatedBin.isFilling = false;
+            updatedBin.startTime = undefined;
+          }
+          break;
+        
+        case 'wagon_remove':
+          if (lastLog.oldValue !== undefined && lastLog.newValue !== undefined) {
+            const tonsToAdd = lastLog.oldValue - lastLog.newValue;
+            const feetToAdd = tonsToFeet(tonsToAdd);
+            updatedBin.currentFillTons = lastLog.oldValue;
+            updatedBin.currentFillFeet = Math.min(updatedBin.maxCapacityFeet, updatedBin.currentFillFeet + feetToAdd);
+            updatedBin.wagonCount = updatedBin.wagonCount + 1;
+            updatedBin.isFilling = false;
+            updatedBin.startTime = undefined;
+          }
+          break;
+        
+        case 'wagon_reset':
+          // Can't easily undo wagon reset without knowing previous value
+          break;
+        
+        case 'grain_change':
+          if (lastLog.details && lastLog.details.includes('from "') && lastLog.details.includes('" to "')) {
+            const match = lastLog.details.match(/from "([^"]+)" to "([^"]+)"/);
+            if (match) {
+              updatedBin.grainType = match[1]; // Revert to old grain type
+            }
+          }
+          break;
+      }
+
+      // Remove the last log after undoing
+      updatedBin.activityLogs = updatedBin.activityLogs.slice(1);
+
+      return currentBins.map((b) => b.id === binId ? updatedBin : b);
+    });
+  }, [tonsToFeet]);
+
   return {
     bins,
     systemSettings,
+    isLoading,
     startFilling,
     stopFilling,
     resetBin,
@@ -319,5 +609,10 @@ export function useBinManager() {
     removeTruckLoad,
     resetTrailerCount,
     updateGrainType,
+    addWagonLoad,
+    removeWagonLoad,
+    resetWagonCount,
+    deleteActivityLog,
+    undoLastActivity,
   };
 }

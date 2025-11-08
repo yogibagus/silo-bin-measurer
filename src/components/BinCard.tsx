@@ -5,34 +5,51 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Bin, BinMetrics } from '@/types/bin';
 import { Play, Pause, RotateCcw, Edit, Save, X, Plus, Minus } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { ActivityTab } from './ActivityTab';
 
 interface BinCardProps {
   bin: Bin;
   metrics: BinMetrics;
+  systemSettings: {
+    tonsPerTrailer: number;
+    tonsPerWagon: number;
+  };
   onStartFilling: (binId: number) => void;
   onStopFilling: (binId: number) => void;
   onReset: (binId: number) => void;
   onManualFillUpdate: (binId: number, feet: number) => void;
   onAddTruckLoad: (binId: number, trailers: number) => void;
-  onRemoveTruckLoad: (binId: number, trailers: number) => void;
+  onRemoveTrailerLoad: (binId: number, trailers: number) => void;
   onResetTrailerCount: (binId: number) => void;
   onUpdateGrainType: (binId: number, grainType: string) => void;
+  onAddWagonLoad: (binId: number, wagons: number) => void;
+  onRemoveWagonLoad: (binId: number, wagons: number) => void;
+  onResetWagonCount: (binId: number) => void;
+  onDeleteActivityLog?: (binId: number, logId: string) => void;
+  onUndoLastActivity?: (binId: number) => void;
 }
 
 export function BinCard({
   bin,
   metrics,
+  systemSettings,
   onStartFilling,
   onStopFilling,
   onReset,
   onManualFillUpdate,
   onAddTruckLoad,
-  onRemoveTruckLoad,
+  onRemoveTrailerLoad,
   onResetTrailerCount,
   onUpdateGrainType,
+  onAddWagonLoad,
+  onRemoveWagonLoad,
+  onResetWagonCount,
+  onDeleteActivityLog,
+  onUndoLastActivity,
 }: BinCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(metrics.remainingCapacityFeet.toString());
@@ -43,6 +60,8 @@ export function BinCard({
   const [isHoldingStart, setIsHoldingStart] = useState(false);
   const [isHoldingInload, setIsHoldingInload] = useState(false);
   const [isHoldingOutload, setIsHoldingOutload] = useState(false);
+  const [isHoldingWagonInload, setIsHoldingWagonInload] = useState(false);
+  const [isHoldingWagonOutload, setIsHoldingWagonOutload] = useState(false);
   const [holdProgress, setHoldProgress] = useState(0);
   const [holdTimer, setHoldTimer] = useState<NodeJS.Timeout | null>(null);
 
@@ -74,13 +93,15 @@ export function BinCard({
     const remainingFeet = parseFloat(editValue);
     console.log('Parsed remainingFeet:', remainingFeet);
     console.log('Bin maxCapacityFeet:', bin.maxCapacityFeet);
+    console.log('Current bin.currentFillFeet:', bin.currentFillFeet);
+    console.log('Current bin.currentFillTons:', bin.currentFillTons);
+    console.log('Current metrics.remainingCapacityTons:', metrics.remainingCapacityTons);
+    console.log('Current metrics.remainingCapacityFeet:', metrics.remainingCapacityFeet);
     
     if (!isNaN(remainingFeet) && remainingFeet >= 0 && remainingFeet <= bin.maxCapacityFeet) {
-      const currentFeet = bin.maxCapacityFeet - remainingFeet;
-      console.log('Calculated currentFeet:', currentFeet);
-      console.log('Calling onManualFillUpdate with binId:', bin.id, 'currentFeet:', currentFeet);
+      console.log('Calling onManualFillUpdate with binId:', bin.id, 'remainingFeet:', remainingFeet);
       
-      onManualFillUpdate(bin.id, currentFeet);
+      onManualFillUpdate(bin.id, remainingFeet);
       setIsEditing(false);
       console.log('Save completed');
     } else {
@@ -119,16 +140,32 @@ export function BinCard({
   };
 
   // Hold to press functions
-  const startHold = (action: 'start' | 'inload' | 'outload') => {
+  const startHold = (action: 'start' | 'inload' | 'outload' | 'wagonInload' | 'wagonOutload') => {
+    console.log('=== START HOLD DEBUG ===');
     console.log('startHold called with action:', action, 'for bin:', bin.id);
-    if (holdTimer) clearInterval(holdTimer);
+    console.log('Current bin.isFilling:', bin.isFilling);
+    console.log('Current metrics.fillPercentage:', metrics.fillPercentage);
+    
+    if (holdTimer) {
+      console.log('Clearing existing hold timer');
+      clearInterval(holdTimer);
+    }
     
     setHoldProgress(0);
     const startTime = Date.now();
     
-    if (action === 'start') setIsHoldingStart(true);
-    else if (action === 'inload') setIsHoldingInload(true);
-    else if (action === 'outload') setIsHoldingOutload(true);
+    if (action === 'start') {
+      console.log('Setting isHoldingStart to true');
+      setIsHoldingStart(true);
+    } else if (action === 'inload') {
+      setIsHoldingInload(true);
+    } else if (action === 'outload') {
+      setIsHoldingOutload(true);
+    } else if (action === 'wagonInload') {
+      setIsHoldingWagonInload(true);
+    } else if (action === 'wagonOutload') {
+      setIsHoldingWagonOutload(true);
+    }
     
     const timer = setInterval(() => {
       const elapsed = Date.now() - startTime;
@@ -136,6 +173,7 @@ export function BinCard({
       setHoldProgress(progress);
       
       if (progress >= 100) {
+        console.log('=== HOLD COMPLETED ===');
         console.log('Hold completed for action:', action, 'executing...');
         clearInterval(timer);
         setHoldTimer(null);
@@ -143,20 +181,28 @@ export function BinCard({
         
         // Execute action
         if (action === 'start') {
-          console.log('Calling onStartFilling for bin:', bin.id);
+          console.log('CALLING onStartFilling for bin:', bin.id);
           onStartFilling(bin.id);
+          console.log('Called onStartFilling, setting isHoldingStart to false');
           setIsHoldingStart(false);
         } else if (action === 'inload') {
           onAddTruckLoad(bin.id, 1);
           setIsHoldingInload(false);
         } else if (action === 'outload') {
-          onRemoveTruckLoad(bin.id, 1);
+          onRemoveTrailerLoad(bin.id, 1);
           setIsHoldingOutload(false);
+        } else if (action === 'wagonInload') {
+          onAddWagonLoad(bin.id, 1);
+          setIsHoldingWagonInload(false);
+        } else if (action === 'wagonOutload') {
+          onRemoveWagonLoad(bin.id, 1);
+          setIsHoldingWagonOutload(false);
         }
       }
     }, 50);
     
     setHoldTimer(timer);
+    console.log('Hold timer started for action:', action);
   };
 
   const cancelHold = () => {
@@ -168,6 +214,8 @@ export function BinCard({
     setIsHoldingStart(false);
     setIsHoldingInload(false);
     setIsHoldingOutload(false);
+    setIsHoldingWagonInload(false);
+    setIsHoldingWagonOutload(false);
   };
 
   // Cleanup on unmount
@@ -234,182 +282,309 @@ export function BinCard({
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3 sm:space-y-4">
-        {/* Progress Bar */}
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span>Fill Level</span>
-            <span>{metrics.fillPercentage.toFixed(1)}%</span>
-          </div>
-          <Progress value={metrics.fillPercentage} className="h-3" />
-        </div>
-
-        {/* Current Measurements */}
-        <div className="space-y-1">
-          <p className="text-sm font-medium">Remaining Capacity</p>
-          {isEditing ? (
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                value={editValue}
-                onChange={(e) => setEditValue(e.target.value)}
-                min="0"
-                max={bin.maxCapacityFeet}
-                step="0.1"
-                className="w-24 h-8 text-sm"
-                disabled={bin.isFilling}
-                autoFocus
-              />
-              <Button size="sm" onClick={handleSave} disabled={bin.isFilling}>
-                <Save className="w-4 h-4" />
-              </Button>
-              <Button size="sm" variant="outline" onClick={handleCancel}>
-                <X className="w-4 h-4" />
-              </Button>
+      <CardContent className="p-0">
+        <Tabs defaultValue="overview" className="w-full">
+          <TabsList className="grid w-full grid-cols-2 mx-auto max-w-xs">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="activity">Activity</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="overview" className="space-y-3 sm:space-y-4 p-4 pt-6">
+            {/* Progress Bar */}
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span>Fill Level</span>
+                <span>{metrics.fillPercentage.toFixed(1)}%</span>
+              </div>
+              <Progress value={metrics.fillPercentage} className="h-3" />
             </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <p className="text-2xl font-bold text-orange-600">
-                {metrics.remainingCapacityFeet.toFixed(1)} ft
+
+            {/* Remaining Capacity */}
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Remaining Capacity</p>
+              {isEditing ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    min="0"
+                    max={bin.maxCapacityFeet}
+                    step="0.1"
+                    className="w-24 h-8 text-sm"
+                    disabled={bin.isFilling}
+                    autoFocus
+                  />
+                  <span className="text-sm text-gray-600">ft</span>
+                  <Button size="sm" onClick={handleSave} disabled={bin.isFilling}>
+                    <Save className="w-4 h-4" />
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={handleCancel}>
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <p className="text-2xl font-bold text-orange-600">
+                    {metrics.remainingCapacityFeet.toFixed(1)} ft
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleEdit}
+                    disabled={bin.isFilling}
+                  >
+                    <Edit className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
+              <p className="text-sm text-gray-600">
+                {metrics.remainingCapacityTons.toFixed(0)} tons remaining
               </p>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleEdit}
-                disabled={bin.isFilling}
-              >
-                <Edit className="w-4 h-4" />
-              </Button>
             </div>
-          )}
-          <p className="text-sm text-gray-600">
-            {metrics.remainingCapacityTons.toFixed(0)} tons remaining
-          </p>
-        </div>
 
-        {/* Time Information */}
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <p className="font-medium">Elapsed Time</p>
-            <p className="text-gray-600">{metrics.elapsedTime}</p>
-          </div>
-          <div>
-            <p className="font-medium">Est. Time to Full</p>
-            <p className="text-gray-600">{metrics.estimatedTimeToFull}</p>
-            <p className="text-xs text-blue-600 font-medium">
-              ~{metrics.estimatedTrailersToFull} trailers
-            </p>
-          </div>
-        </div>
-
-        {/* Truck Load Controls */}
-        <div className="bg-blue-50 p-3 rounded-lg">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-            <p className="text-sm font-medium">Trailer (30 tons/trailer)</p>
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-bold text-blue-600">{bin.trailerCount}</span>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onResetTrailerCount(bin.id)}
-                disabled={bin.isFilling}
-                className="h-6 px-2 text-xs"
-              >
-                Reset
-              </Button>
+            {/* Time Information */}
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="font-medium">Elapsed Time</p>
+                <p className="text-gray-600">{metrics.elapsedTime}</p>
+              </div>
+              <div>
+                <p className="font-medium">Est. Time to Full</p>
+                <p className="text-gray-600">{metrics.estimatedTimeToFull}</p>
+                <p className="text-xs text-blue-600 font-medium">
+                  ~{metrics.estimatedTrailersToFull} trailers
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="relative">
-              <Button
-                size="sm"
-                variant="outline"
-                onMouseDown={() => startHold('inload')}
-                onMouseUp={cancelHold}
-                onMouseLeave={cancelHold}
-                onTouchStart={() => startHold('inload')}
-                onTouchEnd={cancelHold}
-                disabled={bin.isFilling || metrics.fillPercentage >= 100}
-                className={`text-xs w-full ${isHoldingInload ? 'bg-green-100 border-green-300' : ''}`}
-              >
-                <Plus className="w-3 h-3 mr-1" />
-                <span className="hidden sm:inline">1 Trailer Inload</span>
-                <span className="sm:hidden">Add</span>
-              </Button>
-              {isHoldingInload && (
-                <div className="absolute top-full left-0 right-0 mt-1 z-10">
-                  <Progress value={holdProgress} className="h-1" />
+
+            {/* Load Controls */}
+            <Tabs defaultValue="inload" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mx-auto max-w-xs">
+                <TabsTrigger value="inload">Inload</TabsTrigger>
+                <TabsTrigger value="outload">Outload</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="inload" className="space-y-3 mt-4">
+                {/* Truck Load Inload */}
+                <div className="bg-blue-50 p-3 rounded-lg">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+                    <p className="text-sm font-medium">Trailer ({systemSettings.tonsPerTrailer} tons/trailer)</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-bold text-blue-600">{bin.trailerCount}</span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onResetTrailerCount(bin.id)}
+                        disabled={bin.isFilling}
+                        className="h-6 px-2 text-xs"
+                      >
+                        Reset
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onMouseDown={() => startHold('inload')}
+                      onMouseUp={cancelHold}
+                      onMouseLeave={cancelHold}
+                      onTouchStart={() => startHold('inload')}
+                      onTouchEnd={cancelHold}
+                      disabled={bin.isFilling || metrics.fillPercentage >= 100}
+                      className={`text-xs w-full ${isHoldingInload ? 'bg-green-100 border-green-300' : ''}`}
+                    >
+                      <Plus className="w-3 h-3 mr-1" />
+                      1 Trailer Inload
+                    </Button>
+                    {isHoldingInload && (
+                      <div className="absolute top-full left-0 right-0 mt-1 z-10">
+                        <Progress value={holdProgress} className="h-1" />
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
-            <div className="relative">
-              <Button
-                size="sm"
-                variant="outline"
-                onMouseDown={() => startHold('outload')}
-                onMouseUp={cancelHold}
-                onMouseLeave={cancelHold}
-                onTouchStart={() => startHold('outload')}
-                onTouchEnd={cancelHold}
-                disabled={bin.isFilling || metrics.fillPercentage <= 0}
-                className={`text-xs w-full ${isHoldingOutload ? 'bg-red-100 border-red-300' : ''}`}
-              >
-                <Minus className="w-3 h-3 mr-1" />
-                <span className="hidden sm:inline">1 Trailer Outload</span>
-                <span className="sm:hidden">Remove</span>
-              </Button>
-              {isHoldingOutload && (
-                <div className="absolute top-full left-0 right-0 mt-1 z-10">
-                  <Progress value={holdProgress} className="h-1" />
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
 
-        {/* Control Buttons */}
-        {!bin.isFilling ? (
-          <div className="relative w-full">
-            <Button
-              onMouseDown={() => startHold('start')}
-              onMouseUp={cancelHold}
-              onMouseLeave={cancelHold}
-              onTouchStart={() => startHold('start')}
-              onTouchEnd={cancelHold}
-              className={`w-full text-sm ${isHoldingStart ? 'bg-green-100 border-green-300' : ''}`}
-              disabled={metrics.fillPercentage >= 100}
-            >
-              <Play className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
-              <span className="hidden sm:inline">Start Filling</span>
-              <span className="sm:hidden">Start</span>
-            </Button>
-            {isHoldingStart && (
-              <div className="absolute top-full left-0 right-0 mt-1 z-10">
-                <Progress value={holdProgress} className="h-1" />
+                {/* Wagon Train Inload */}
+                <div className="bg-green-50 p-3 rounded-lg">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+                    <p className="text-sm font-medium">Wagon Train ({systemSettings.tonsPerWagon} tons/wagon)</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-bold text-green-600">{bin.wagonCount}</span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onResetWagonCount(bin.id)}
+                        disabled={bin.isFilling}
+                        className="h-6 px-2 text-xs"
+                      >
+                        Reset
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onMouseDown={() => startHold('wagonInload')}
+                      onMouseUp={cancelHold}
+                      onMouseLeave={cancelHold}
+                      onTouchStart={() => startHold('wagonInload')}
+                      onTouchEnd={cancelHold}
+                      disabled={bin.isFilling || metrics.fillPercentage >= 100}
+                      className={`text-xs w-full ${isHoldingWagonInload ? 'bg-green-100 border-green-300' : ''}`}
+                    >
+                      <Plus className="w-3 h-3 mr-1" />
+                      1 Wagon Inload
+                    </Button>
+                    {isHoldingWagonInload && (
+                      <div className="absolute top-full left-0 right-0 mt-1 z-10">
+                        <Progress value={holdProgress} className="h-1" />
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-green-600 font-medium mt-2">
+                    ~{metrics.estimatedWagonsToFull} wagons to full
+                  </p>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="outload" className="space-y-3 mt-4">
+                {/* Truck Load Outload */}
+                <div className="bg-red-50 p-3 rounded-lg">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+                    <p className="text-sm font-medium">Trailer ({systemSettings.tonsPerTrailer} tons/trailer)</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-bold text-red-600">{bin.trailerCount}</span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onResetTrailerCount(bin.id)}
+                        disabled={bin.isFilling}
+                        className="h-6 px-2 text-xs"
+                      >
+                        Reset
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onMouseDown={() => startHold('outload')}
+                      onMouseUp={cancelHold}
+                      onMouseLeave={cancelHold}
+                      onTouchStart={() => startHold('outload')}
+                      onTouchEnd={cancelHold}
+                      disabled={bin.isFilling || metrics.fillPercentage <= 0}
+                      className={`text-xs w-full ${isHoldingOutload ? 'bg-red-100 border-red-300' : ''}`}
+                    >
+                      <Minus className="w-3 h-3 mr-1" />
+                      1 Trailer Outload
+                    </Button>
+                    {isHoldingOutload && (
+                      <div className="absolute top-full left-0 right-0 mt-1 z-10">
+                        <Progress value={holdProgress} className="h-1" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Wagon Train Outload */}
+                <div className="bg-orange-50 p-3 rounded-lg">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+                    <p className="text-sm font-medium">Wagon Train ({systemSettings.tonsPerWagon} tons/wagon)</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-bold text-orange-600">{bin.wagonCount}</span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onResetWagonCount(bin.id)}
+                        disabled={bin.isFilling}
+                        className="h-6 px-2 text-xs"
+                      >
+                        Reset
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onMouseDown={() => startHold('wagonOutload')}
+                      onMouseUp={cancelHold}
+                      onMouseLeave={cancelHold}
+                      onTouchStart={() => startHold('wagonOutload')}
+                      onTouchEnd={cancelHold}
+                      disabled={bin.isFilling || metrics.fillPercentage <= 0}
+                      className={`text-xs w-full ${isHoldingWagonOutload ? 'bg-red-100 border-red-300' : ''}`}
+                    >
+                      <Minus className="w-3 h-3 mr-1" />
+                      1 Wagon Outload
+                    </Button>
+                    {isHoldingWagonOutload && (
+                      <div className="absolute top-full left-0 right-0 mt-1 z-10">
+                        <Progress value={holdProgress} className="h-1" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
+
+            {/* Control Buttons */}
+            {!bin.isFilling ? (
+              <div className="relative w-full">
+                <Button
+                  onMouseDown={() => startHold('start')}
+                  onMouseUp={cancelHold}
+                  onMouseLeave={cancelHold}
+                  onTouchStart={() => startHold('start')}
+                  onTouchEnd={cancelHold}
+                  className={`w-full text-sm ${isHoldingStart ? 'bg-green-100 border-green-300' : ''}`}
+                  disabled={metrics.fillPercentage >= 100}
+                >
+                  <Play className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
+                  Start Filling
+                </Button>
+                {isHoldingStart && (
+                  <div className="absolute top-full left-0 right-0 mt-1 z-10">
+                    <Progress value={holdProgress} className="h-1" />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => onStopFilling(bin.id)}
+                  variant="destructive"
+                  className="flex-1 text-sm"
+                >
+                  <Pause className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
+                  Stop Filling
+                </Button>
+                <Button
+                  onClick={() => onReset(bin.id)}
+                  variant="outline"
+                  disabled={bin.isFilling}
+                  className="px-2 sm:px-4"
+                >
+                  <RotateCcw className="w-3 h-3 sm:w-4 sm:h-4" />
+                </Button>
               </div>
             )}
-          </div>
-        ) : (
-          <div className="flex gap-2">
-            <Button
-              onClick={() => onStopFilling(bin.id)}
-              variant="destructive"
-              className="flex-1 text-sm"
-            >
-              <Pause className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
-              <span className="hidden sm:inline">Stop Filling</span>
-              <span className="sm:hidden">Stop</span>
-            </Button>
-            <Button
-              onClick={() => onReset(bin.id)}
-              variant="outline"
-              disabled={bin.isFilling}
-              className="px-2 sm:px-4"
-            >
-              <RotateCcw className="w-3 h-3 sm:w-4 sm:h-4" />
-            </Button>
-          </div>
-        )}
+          </TabsContent>
+          
+          <TabsContent value="activity" className="p-4 pt-6">
+            <ActivityTab 
+              activityLogs={bin.activityLogs} 
+              binId={bin.id}
+              onDeleteActivityLog={onDeleteActivityLog}
+              onUndoLastActivity={onUndoLastActivity}
+            />
+          </TabsContent>
+        </Tabs>
       </CardContent>
     </Card>
   );
