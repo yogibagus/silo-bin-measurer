@@ -148,7 +148,7 @@ export function Dashboard() {
               {!isEditingSystem && (
                 <button
                   onClick={handleEditSystem}
-                  className="p-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  className="p-1 bg-white hover:bg-gray-100 rounded-md transition-colors"
                   title="Edit System Settings"
                 >
                   <Edit className="w-4 h-4" />

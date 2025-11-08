@@ -264,7 +264,7 @@ export function BinCard({
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <p className="text-xs sm:text-sm text-gray-600 font-medium truncate">{bin.grainType}</p>
+                <p className="text-xs sm:text-sm text-gray-600 font-medium truncate">Grade: {bin.grainType}</p>
                 <Button
                   size="sm"
                   variant="outline"
