@@ -241,7 +241,7 @@ export function BinCard({
 
   return (
     <Card className="w-full">
-      <CardHeader className="pb-3">
+      <CardHeader className="pb-0">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <CardTitle className="text-lg sm:text-xl font-bold truncate">{bin.name}</CardTitle>
@@ -282,6 +282,7 @@ export function BinCard({
           </Badge>
         </div>
       </CardHeader>
+      <hr />
       <CardContent className="p-0">
         <Tabs defaultValue="overview" className="w-full">
           <TabsList className="grid w-full grid-cols-2 mx-auto max-w-xs">
@@ -289,7 +290,7 @@ export function BinCard({
             <TabsTrigger value="activity">Activity</TabsTrigger>
           </TabsList>
           
-          <TabsContent value="overview" className="space-y-3 sm:space-y-4 p-4 pt-6">
+          <TabsContent value="overview" className="space-y-3 sm:space-y-4 p-4 pt-2">
             {/* Progress Bar */}
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
@@ -299,64 +300,77 @@ export function BinCard({
               <Progress value={metrics.fillPercentage} className="h-3" />
             </div>
 
-            {/* Remaining Capacity */}
-            <div className="space-y-1">
-              <p className="text-sm font-medium">Remaining Capacity</p>
-              {isEditing ? (
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    value={editValue}
-                    onChange={(e) => setEditValue(e.target.value)}
-                    min="0"
-                    max={bin.maxCapacityFeet}
-                    step="0.1"
-                    className="w-24 h-8 text-sm"
-                    disabled={bin.isFilling}
-                    autoFocus
-                  />
-                  <span className="text-sm text-gray-600">ft</span>
-                  <Button size="sm" onClick={handleSave} disabled={bin.isFilling}>
-                    <Save className="w-4 h-4" />
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={handleCancel}>
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <p className="text-2xl font-bold text-orange-600">
-                    {metrics.remainingCapacityFeet.toFixed(1)} ft
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleEdit}
-                    disabled={bin.isFilling}
-                  >
-                    <Edit className="w-4 h-4" />
-                  </Button>
-                </div>
-              )}
-              <p className="text-sm text-gray-600">
-                {metrics.remainingCapacityTons.toFixed(0)} tons remaining
-              </p>
-            </div>
-
-            {/* Time Information */}
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="font-medium">Elapsed Time</p>
-                <p className="text-gray-600">{metrics.elapsedTime}</p>
+            {/* Time Information - Single Row */}
+            <div className="grid grid-cols-3 gap-2 sm:gap-4 text-sm">
+              {/* Remaining Capacity */}
+              <div className="col-span-1">
+                <p className="font-medium text-xs sm:text-sm">Remaining Capacity</p>
+                {isEditing ? (
+                  <div className="flex flex-col gap-1 mt-1">
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="number"
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        min="0"
+                        max={bin.maxCapacityFeet}
+                        step="0.1"
+                        className="w-16 h-7 text-xs"
+                        disabled={bin.isFilling}
+                        autoFocus
+                      />
+                      <span className="text-xs text-gray-600">ft</span>
+                    </div>
+                    <div className="flex gap-1">
+                      <Button size="sm" onClick={handleSave} disabled={bin.isFilling} className="h-6 px-2 text-xs">
+                        <Save className="w-3 h-3" />
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={handleCancel} className="h-6 px-2 text-xs">
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-1">
+                    {/* make button righ next to ft */}
+                    <div className="flex items-center gap-1">
+                      <p className="text-lg sm:text-xl font-bold text-orange-600">
+                        {metrics.remainingCapacityFeet.toFixed(1)} ft
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleEdit}
+                        disabled={bin.isFilling}
+                        className="h-6 px-2 flex-shrink-0"
+                      >
+                        <Edit className="w-3 h-3" />
+                      </Button>
+                    </div>
+                    <p className="text-xs text-gray-600">
+                      {metrics.remainingCapacityTons.toFixed(0)} tons remaining
+                    </p>
+                  </div>
+                )}
               </div>
-              <div>
-                <p className="font-medium">Est. Time to Full</p>
-                <p className="text-gray-600">{metrics.estimatedTimeToFull}</p>
+
+              {/* Est. Time to Full */}
+              <div className="col-span-1">
+                <p className="font-medium text-xs sm:text-sm">Est. Time to Full</p>
+                <p className="text-gray-600 text-xs sm:text-sm mt-1">{metrics.estimatedTimeToFull}</p>
                 <p className="text-xs text-blue-600 font-medium">
                   ~{metrics.estimatedTrailersToFull} trailers
                 </p>
               </div>
+
+               {/* Elapsed Time */}
+              <div className="col-span-1">
+                <p className="font-medium text-xs sm:text-sm">Elapsed Time</p>
+                <p className="text-gray-600 text-xs sm:text-sm mt-1">{metrics.elapsedTime}</p>
+              </div>
             </div>
+
+            <hr />
 
             {/* Load Controls */}
             <Tabs defaultValue="inload" className="w-full">
@@ -576,7 +590,7 @@ export function BinCard({
             )}
           </TabsContent>
           
-          <TabsContent value="activity" className="p-4 pt-6">
+          <TabsContent value="activity" className="p-4 pt-2">
             <ActivityTab 
               activityLogs={bin.activityLogs} 
               binId={bin.id}
