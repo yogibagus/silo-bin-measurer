@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { BinCard } from './BinCard';
 import { useBinManager } from '@/hooks/useBinManager';
-import { Factory, AlertTriangle, Edit, Check, X } from 'lucide-react';
+import { useNotifications } from '@/hooks/useNotifications';
+import { Factory, AlertTriangle, Edit, Check, X, Bell } from 'lucide-react';
 
 export function Dashboard() {
   const [isMounted, setIsMounted] = useState(false);
@@ -13,6 +14,8 @@ export function Dashboard() {
   const [tempElevatorSpeed, setTempElevatorSpeed] = useState('');
   const [tempTrailerCapacity, setTempTrailerCapacity] = useState('');
   const [tempWagonCapacity, setTempWagonCapacity] = useState('');
+  const [tempNotificationsEnabled, setTempNotificationsEnabled] = useState(true);
+  const [tempNotificationThreshold, setTempNotificationThreshold] = useState('10');
   
   useEffect(() => {
     setIsMounted(true);
@@ -36,7 +39,17 @@ export function Dashboard() {
     resetWagonCount,
     deleteActivityLog,
     undoLastActivity,
+    manualInload,
+    manualOutload,
   } = useBinManager();
+
+  const { 
+    canShowNotifications,
+    getNotificationStatus,
+    requestNotificationPermission,
+    testNotification,
+    resetNotificationCooldown,
+  } = useNotifications();
 
   const binMetrics = getAllBinMetrics();
   
@@ -50,6 +63,8 @@ export function Dashboard() {
     setTempElevatorSpeed(systemSettings.elevatorSpeed.toString());
     setTempTrailerCapacity(systemSettings.tonsPerTrailer.toString());
     setTempWagonCapacity(systemSettings.tonsPerWagon.toString());
+    setTempNotificationsEnabled(systemSettings.notifications?.enabled ?? true);
+    setTempNotificationThreshold(systemSettings.notifications?.thresholdFeet?.toString() ?? '10');
     setIsEditingSystem(true);
   };
 
@@ -57,14 +72,23 @@ export function Dashboard() {
     const newSpeed = parseFloat(tempElevatorSpeed);
     const newTrailerCapacity = parseFloat(tempTrailerCapacity);
     const newWagonCapacity = parseFloat(tempWagonCapacity);
+    const newNotificationThreshold = parseFloat(tempNotificationThreshold);
     
     if (!isNaN(newSpeed) && newSpeed > 0 && 
         !isNaN(newTrailerCapacity) && newTrailerCapacity > 0 && 
-        !isNaN(newWagonCapacity) && newWagonCapacity > 0) {
+        !isNaN(newWagonCapacity) && newWagonCapacity > 0 &&
+        !isNaN(newNotificationThreshold) && newNotificationThreshold > 0) {
       updateSystemSettings({ 
         elevatorSpeed: newSpeed,
         tonsPerTrailer: newTrailerCapacity,
-        tonsPerWagon: newWagonCapacity
+        tonsPerWagon: newWagonCapacity,
+        notifications: {
+          enabled: tempNotificationsEnabled,
+          thresholdFeet: newNotificationThreshold,
+          soundEnabled: systemSettings.notifications?.soundEnabled ?? true,
+          requireInteraction: systemSettings.notifications?.requireInteraction ?? true,
+          cooldownMinutes: systemSettings.notifications?.cooldownMinutes ?? 30,
+        }
       });
       setIsEditingSystem(false);
     }
@@ -75,6 +99,8 @@ export function Dashboard() {
     setTempElevatorSpeed('');
     setTempTrailerCapacity('');
     setTempWagonCapacity('');
+    setTempNotificationsEnabled(true);
+    setTempNotificationThreshold('10');
   };
 
   if (!isMounted || isLoading) {
@@ -146,13 +172,38 @@ export function Dashboard() {
                 System Information
               </div>
               {!isEditingSystem && (
-                <button
-                  onClick={handleEditSystem}
-                  className="p-1 bg-white hover:bg-gray-100 rounded-md transition-colors"
-                  title="Edit System Settings"
-                >
-                  <Edit className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  {/* <button
+                    onClick={async () => {
+                      if (!canShowNotifications()) {
+                        await requestNotificationPermission();
+                      }
+                      testNotification();
+                    }}
+                    className="p-1 bg-white hover:bg-gray-100 rounded-md transition-colors"
+                    title="Test Notification"
+                  >
+                    <Bell className="w-4 h-4" />
+                  </button> */}
+                  {/* <button
+                    onClick={() => {
+                      bins.forEach(bin => {
+                        resetNotificationCooldown(bin.id);
+                      });
+                    }}
+                    className="p-1 bg-white hover:bg-gray-100 rounded-md transition-colors"
+                    title="Reset Notification Cooldown"
+                  >
+                    <X className="w-4 h-4" />
+                  </button> */}
+                  <button
+                    onClick={handleEditSystem}
+                    className="p-1 bg-white hover:bg-gray-100 rounded-md transition-colors"
+                    title="Edit System Settings"
+                  >
+                    <Edit className="w-4 h-4" />
+                  </button>
+                </div>
               )}
             </CardTitle>
           </CardHeader>
@@ -203,6 +254,32 @@ export function Dashboard() {
                     <p className="font-medium text-xs sm:text-sm">Conversion Rate</p>
                     <p className="text-gray-600 text-xs sm:text-sm">1 ft = {systemSettings.tonsPerFoot} tons</p>
                   </div>
+                  <div>
+                    <p className="font-medium text-xs sm:text-sm">Notifications</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <input
+                        type="checkbox"
+                        checked={tempNotificationsEnabled}
+                        onChange={(e) => setTempNotificationsEnabled(e.target.checked)}
+                        className="w-4 h-4 text-xs sm:text-sm"
+                      />
+                      <span className="text-xs text-gray-600">Enable alerts</span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="font-medium text-xs sm:text-sm">Alert Threshold</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <input
+                        type="number"
+                        value={tempNotificationThreshold}
+                        onChange={(e) => setTempNotificationThreshold(e.target.value)}
+                        className="w-16 sm:w-20 px-2 py-1 border rounded text-xs sm:text-sm"
+                        placeholder="feet"
+                        disabled={!tempNotificationsEnabled}
+                      />
+                      <span className="text-xs text-gray-600">feet</span>
+                    </div>
+                  </div>
                   <div className="sm:col-span-2 lg:col-span-2">
                     <p className="font-medium text-xs sm:text-sm">Fill Rate</p>
                     <p className="text-gray-600 text-xs sm:text-sm">
@@ -252,6 +329,18 @@ export function Dashboard() {
                   </p>
                 </div>
                 <div>
+                  <p className="font-medium text-xs sm:text-sm">Notifications</p>
+                  <p className="text-gray-600 text-xs sm:text-sm">
+                    {systemSettings.notifications?.enabled ? 'Enabled' : 'Disabled'} 
+                    {systemSettings.notifications?.enabled && ` (${systemSettings.notifications.thresholdFeet} ft)`}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Status: {getNotificationStatus() === 'granted' ? '✅ Allowed' : 
+                            getNotificationStatus() === 'denied' ? '❌ Blocked' : 
+                            getNotificationStatus() === 'default' ? '⏳ Not Set' : '🚫 Unsupported'}
+                  </p>
+                </div>
+                <div>
                   <p className="font-medium text-xs sm:text-sm">Last Updated</p>
                   <p className="text-gray-600 text-xs sm:text-sm">{new Date().toLocaleString()}</p>
                 </div>
@@ -263,28 +352,30 @@ export function Dashboard() {
         {/* Bin Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
           {binMetrics.map(({ bin, metrics }) => (
-        <BinCard
-          key={bin.id}
-          bin={bin}
-          metrics={metrics}
-          systemSettings={{
-            tonsPerTrailer: systemSettings.tonsPerTrailer,
-            tonsPerWagon: systemSettings.tonsPerWagon,
-          }}
-          onStartFilling={startFilling}
-          onStopFilling={stopFilling}
-          onReset={resetBin}
-          onManualFillUpdate={updateManualFill}
-          onAddTruckLoad={addTruckLoad}
-          onRemoveTrailerLoad={removeTruckLoad}
-          onResetTrailerCount={resetTrailerCount}
-          onUpdateGrainType={updateGrainType}
-          onAddWagonLoad={addWagonLoad}
-          onRemoveWagonLoad={removeWagonLoad}
-          onResetWagonCount={resetWagonCount}
-          onDeleteActivityLog={deleteActivityLog}
-          onUndoLastActivity={undoLastActivity}
-        />
+            <BinCard
+              key={bin.id}
+              bin={bin}
+              metrics={metrics}
+              systemSettings={{
+                tonsPerTrailer: systemSettings.tonsPerTrailer,
+                tonsPerWagon: systemSettings.tonsPerWagon,
+              }}
+              onStartFilling={startFilling}
+              onStopFilling={stopFilling}
+              onReset={resetBin}
+              onManualFillUpdate={updateManualFill}
+              onAddTruckLoad={addTruckLoad}
+              onRemoveTruckLoad={removeTruckLoad}
+              onResetTrailerCount={resetTrailerCount}
+              onUpdateGrainType={updateGrainType}
+              onAddWagonLoad={addWagonLoad}
+              onRemoveWagonLoad={removeWagonLoad}
+              onResetWagonCount={resetWagonCount}
+              onManualInload={manualInload}
+              onManualOutload={manualOutload}
+              onDeleteActivityLog={deleteActivityLog}
+              onUndoLastActivity={undoLastActivity}
+            />
           ))}
         </div>
 

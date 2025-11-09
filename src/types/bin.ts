@@ -1,7 +1,7 @@
 export interface ActivityLog {
   id: string;
   timestamp: Date;
-  action: 'start_filling' | 'stop_filling' | 'reset' | 'manual_fill' | 'truck_load' | 'truck_remove' | 'trailer_reset' | 'wagon_load' | 'wagon_remove' | 'wagon_reset' | 'grain_change';
+  action: 'start_filling' | 'stop_filling' | 'reset' | 'manual_fill' | 'manual_inload' | 'manual_outload' | 'truck_load' | 'truck_remove' | 'trailer_reset' | 'wagon_load' | 'wagon_remove' | 'wagon_reset' | 'grain_change' | 'notification_sent';
   details: string;
   oldValue?: number;
   newValue?: number;
@@ -40,6 +40,15 @@ export interface SystemSettings {
   tonsPerFoot: number; // tons per foot
   tonsPerTrailer: number; // tons per trailer
   tonsPerWagon: number; // tons per wagon
+  notifications: NotificationSettings;
+}
+
+export interface NotificationSettings {
+  enabled: boolean;
+  thresholdFeet: number; // Default 10 feet
+  soundEnabled: boolean;
+  requireInteraction: boolean; // Keep notification visible until clicked
+  cooldownMinutes: number; // Prevent spam notifications
 }
 
 export const ELEVATOR_SPEED_TONS_PER_HOUR = 180;

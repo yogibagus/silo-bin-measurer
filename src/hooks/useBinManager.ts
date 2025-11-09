@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Bin, ActivityLog, TONS_PER_MINUTE, SystemSettings, ELEVATOR_SPEED_TONS_PER_HOUR, TONS_PER_FOOT } from '@/types/bin';
 import { calculateBinMetrics, updateBinFillLevel, feetToTons, tonsToFeet } from '@/lib/calculations';
 import { fetchBins, updateBins, fetchSystemSettings, updateSystemSettings as updateSystemSettingsAPI } from '@/lib/api';
+import { useNotifications } from './useNotifications';
 
 const DEFAULT_BIN_CAPACITY_FEET = 130; // Default capacity, can be adjusted
 
@@ -39,12 +40,24 @@ const getDefaultSystemSettings = (): SystemSettings => ({
   tonsPerFoot: TONS_PER_FOOT,
   tonsPerTrailer: 30, // Default 30 tons per trailer
   tonsPerWagon: 50, // Default 50 tons per wagon
+  notifications: {
+    enabled: true,
+    thresholdFeet: 10,
+    soundEnabled: true,
+    requireInteraction: true,
+    cooldownMinutes: 30,
+  },
 });
 
 export function useBinManager() {
   const [bins, setBins] = useState<Bin[]>(getDefaultBins());
   const [systemSettings, setSystemSettings] = useState<SystemSettings>(getDefaultSystemSettings());
   const [isLoading, setIsLoading] = useState(true);
+  const { 
+    checkThresholdNotification,
+    checkThresholdNotificationAnyState,
+    checkPeriodicNotification,
+  } = useNotifications();
 
   // Helper function to add activity log
   const addActivityLog = useCallback((binId: number, action: ActivityLog['action'], details: string, oldValue?: number, newValue?: number, unit?: string) => {
@@ -95,7 +108,17 @@ export function useBinManager() {
           await updateBins(getDefaultBins());
         }
         
-        setSystemSettings(loadedSettings);
+        setSystemSettings({
+          ...loadedSettings,
+          notifications: {
+            enabled: true,
+            thresholdFeet: 10,
+            soundEnabled: true,
+            requireInteraction: true,
+            cooldownMinutes: 30,
+            ...(loadedSettings as any).notifications,
+          },
+        });
       } catch (error) {
         console.error('Error loading data from MongoDB:', error);
         // Fallback to defaults
@@ -127,7 +150,7 @@ export function useBinManager() {
     }
   }, [systemSettings, isLoading]);
 
-  // Update fill levels for active bins
+  // Update fill levels for active bins and check notifications
   useEffect(() => {
     if (isLoading) return;
     
@@ -147,21 +170,29 @@ export function useBinManager() {
             const newFillFeet = Math.min(bin.currentFillFeet + addedFeet, bin.maxCapacityFeet);
             const newFillTons = Math.min(bin.currentFillTons + addedTons, bin.maxCapacityTons);
             
+            const updatedBin = {
+              ...bin,
+              currentFillFeet: newFillFeet,
+              currentFillTons: newFillTons,
+            };
+            
+            // Check threshold notification for this bin
+            checkThresholdNotification(updatedBin, systemSettings);
+            
+            // Check periodic notification for this bin
+            checkPeriodicNotification(updatedBin, systemSettings);
+            
             // Stop filling if bin is full
             if (newFillFeet >= bin.maxCapacityFeet) {
               return {
-                ...bin,
+                ...updatedBin,
                 isFilling: false,
                 currentFillFeet: bin.maxCapacityFeet,
                 currentFillTons: bin.maxCapacityTons,
               };
             }
             
-            return {
-              ...bin,
-              currentFillFeet: newFillFeet,
-              currentFillTons: newFillTons,
-            };
+            return updatedBin;
           }
           return bin;
         });
@@ -169,7 +200,7 @@ export function useBinManager() {
     }, 1000); // Update every second for smooth real-time updates
 
     return () => clearInterval(interval);
-  }, [systemSettings, isLoading, tonsToFeet]);
+  }, [systemSettings, isLoading, tonsToFeet, checkThresholdNotification, checkPeriodicNotification]);
 
   const startFilling = useCallback((binId: number) => {
     setBins((currentBins) => {
@@ -188,25 +219,17 @@ export function useBinManager() {
     // Add activity log
     addActivityLog(binId, 'start_filling', 'Started filling bin');
     
-    // Force immediate state update to prevent race condition
+    // Check threshold notification immediately after starting
     setTimeout(() => {
       setBins((currentBins) => {
         const targetBin = currentBins.find(b => b.id === binId);
-        if (targetBin && !targetBin.isFilling) {
-          return currentBins.map((bin) =>
-            bin.id === binId
-              ? {
-                  ...bin,
-                  isFilling: true,
-                  startTime: new Date(),
-                }
-              : bin
-          );
+        if (targetBin) {
+          checkThresholdNotificationAnyState(targetBin, systemSettings);
         }
         return currentBins;
       });
     }, 100);
-  }, [addActivityLog]);
+  }, [addActivityLog, checkThresholdNotificationAnyState, systemSettings]);
 
   const stopFilling = useCallback((binId: number) => {
     setBins((currentBins) =>
@@ -240,7 +263,7 @@ export function useBinManager() {
         return currentBins;
       });
     }, 100);
-  }, [addActivityLog]);
+  }, [addActivityLog, checkThresholdNotificationAnyState, systemSettings, tonsToFeet]);
 
   const resetBin = useCallback((binId: number) => {
     setBins((currentBins) =>
@@ -280,7 +303,7 @@ export function useBinManager() {
         return currentBins;
       });
     }, 100);
-  }, [addActivityLog]);
+  }, [addActivityLog, checkThresholdNotificationAnyState, systemSettings, tonsToFeet]);
 
   const updateManualFill = useCallback((binId: number, remainingFeet: number) => {
     setBins((currentBins) => {
@@ -307,11 +330,14 @@ export function useBinManager() {
       const updatedBin = updatedBins.find(b => b.id === binId);
       if (updatedBin && targetBin) {
         addActivityLog(binId, 'manual_fill', `Updated remaining capacity to ${remainingFeet.toFixed(1)} ft`, oldFillTons, updatedBin.currentFillTons, 'tons');
+        
+        // Check threshold notification after manual fill
+        checkThresholdNotificationAnyState(updatedBin, systemSettings);
       }
       
       return updatedBins;
     });
-  }, [addActivityLog]);
+  }, [addActivityLog, checkThresholdNotificationAnyState, systemSettings, feetToTons]);
 
   const getBinMetrics = useCallback((binId: number) => {
     const bin = bins.find((b) => b.id === binId);
@@ -342,7 +368,7 @@ export function useBinManager() {
       const targetBin = currentBins.find(bin => bin.id === binId);
       const oldFillTons = targetBin?.currentFillTons || 0;
       
-      return currentBins.map((bin) =>
+      const updatedBins = currentBins.map((bin) =>
         bin.id === binId
           ? {
               ...bin,
@@ -354,6 +380,14 @@ export function useBinManager() {
             }
           : bin
       );
+      
+      // Check threshold notification after adding truck load
+      const updatedBin = updatedBins.find(b => b.id === binId);
+      if (updatedBin) {
+        checkThresholdNotificationAnyState(updatedBin, systemSettings);
+      }
+      
+      return updatedBins;
     });
     
     // Add activity log
@@ -361,7 +395,7 @@ export function useBinManager() {
     if (bin) {
       addActivityLog(binId, 'truck_load', `Added ${trailers} trailer load(s)`, bin.currentFillTons, bin.currentFillTons + totalTons, 'tons');
     }
-  }, [systemSettings.tonsPerTrailer, addActivityLog, bins]);
+  }, [systemSettings.tonsPerTrailer, addActivityLog, bins, checkThresholdNotificationAnyState, systemSettings, tonsToFeet]);
 
   const removeTruckLoad = useCallback((binId: number, trailers: number) => {
     const tonsPerTrailer = systemSettings.tonsPerTrailer;
@@ -443,7 +477,7 @@ export function useBinManager() {
       const targetBin = currentBins.find(bin => bin.id === binId);
       const oldFillTons = targetBin?.currentFillTons || 0;
       
-      return currentBins.map((bin) =>
+      const updatedBins = currentBins.map((bin) =>
         bin.id === binId
           ? {
               ...bin,
@@ -455,6 +489,14 @@ export function useBinManager() {
             }
           : bin
       );
+      
+      // Check threshold notification after adding wagon load
+      const updatedBin = updatedBins.find(b => b.id === binId);
+      if (updatedBin) {
+        checkThresholdNotificationAnyState(updatedBin, systemSettings);
+      }
+      
+      return updatedBins;
     });
     
     // Add activity log
@@ -462,7 +504,7 @@ export function useBinManager() {
     if (bin) {
       addActivityLog(binId, 'wagon_load', `Added ${wagons} wagon load(s)`, bin.currentFillTons, bin.currentFillTons + totalTons, 'tons');
     }
-  }, [systemSettings.tonsPerWagon, addActivityLog, bins]);
+  }, [systemSettings.tonsPerWagon, addActivityLog, bins, checkThresholdNotificationAnyState, systemSettings, tonsToFeet]);
 
   const removeWagonLoad = useCallback((binId: number, wagons: number) => {
     const tonsPerWagon = systemSettings.tonsPerWagon;
@@ -526,6 +568,72 @@ export function useBinManager() {
     );
   }, []);
 
+  const manualInload = useCallback((binId: number, tons: number, loadType?: 'trailer' | 'wagon' | 'custom') => {
+    const addedFeet = tonsToFeet(tons);
+    
+    setBins((currentBins) => {
+      const targetBin = currentBins.find(bin => bin.id === binId);
+      const oldFillTons = targetBin?.currentFillTons || 0;
+      
+      const updatedBins = currentBins.map((bin) =>
+        bin.id === binId
+          ? {
+              ...bin,
+              currentFillFeet: Math.min(bin.currentFillFeet + addedFeet, bin.maxCapacityFeet),
+              currentFillTons: Math.min(bin.currentFillTons + tons, bin.maxCapacityTons),
+              isFilling: false,
+              startTime: undefined,
+            }
+          : bin
+      );
+      
+      // Add activity log with load type information
+      const updatedBin = updatedBins.find(b => b.id === binId);
+      if (updatedBin && targetBin) {
+        const loadTypeText = loadType && loadType !== 'custom' ? ` (${loadType})` : '';
+        addActivityLog(binId, 'manual_inload', `Manual inload: ${tons} tons${loadTypeText}`, oldFillTons, updatedBin.currentFillTons, 'tons');
+        
+        // Check threshold notification after manual inload
+        checkThresholdNotificationAnyState(updatedBin, systemSettings);
+      }
+      
+      return updatedBins;
+    });
+  }, [addActivityLog, checkThresholdNotificationAnyState, systemSettings, tonsToFeet]);
+
+  const manualOutload = useCallback((binId: number, tons: number, loadType?: 'trailer' | 'wagon' | 'custom') => {
+    const removedFeet = tonsToFeet(tons);
+    
+    setBins((currentBins) => {
+      const targetBin = currentBins.find(bin => bin.id === binId);
+      const oldFillTons = targetBin?.currentFillTons || 0;
+      
+      const updatedBins = currentBins.map((bin) =>
+        bin.id === binId
+          ? {
+              ...bin,
+              currentFillFeet: Math.max(bin.currentFillFeet - removedFeet, 0),
+              currentFillTons: Math.max(bin.currentFillTons - tons, 0),
+              isFilling: false,
+              startTime: undefined,
+            }
+          : bin
+      );
+      
+      // Add activity log after getting the new values
+      const updatedBin = updatedBins.find(b => b.id === binId);
+      if (updatedBin && targetBin) {
+        const loadTypeText = loadType && loadType !== 'custom' ? ` (${loadType})` : '';
+        addActivityLog(binId, 'manual_outload', `Manual outload: ${tons} tons${loadTypeText}`, oldFillTons, updatedBin.currentFillTons, 'tons');
+        
+        // Check threshold notification after manual outload
+        checkThresholdNotificationAnyState(updatedBin, systemSettings);
+      }
+      
+      return updatedBins;
+    });
+  }, [addActivityLog, checkThresholdNotificationAnyState, systemSettings, tonsToFeet]);
+
   const undoLastActivity = useCallback((binId: number) => {
     setBins((currentBins) => {
       const bin = currentBins.find(b => b.id === binId);
@@ -552,6 +660,8 @@ export function useBinManager() {
           break;
         
         case 'manual_fill':
+        case 'manual_inload':
+        case 'manual_outload':
           if (lastLog.oldValue !== undefined) {
             updatedBin.currentFillTons = lastLog.oldValue;
             updatedBin.currentFillFeet = tonsToFeet(lastLog.oldValue);
@@ -653,5 +763,7 @@ export function useBinManager() {
     resetWagonCount,
     deleteActivityLog,
     undoLastActivity,
+    manualInload,
+    manualOutload,
   };
 }

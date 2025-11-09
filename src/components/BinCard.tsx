@@ -10,6 +10,7 @@ import { Bin, BinMetrics } from '@/types/bin';
 import { Play, Pause, RotateCcw, Edit, Save, X, Plus, Minus } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { ActivityTab } from './ActivityTab';
+import { ManualLoadDialog } from './ManualLoadDialog';
 
 interface BinCardProps {
   bin: Bin;
@@ -23,12 +24,14 @@ interface BinCardProps {
   onReset: (binId: number) => void;
   onManualFillUpdate: (binId: number, feet: number) => void;
   onAddTruckLoad: (binId: number, trailers: number) => void;
-  onRemoveTrailerLoad: (binId: number, trailers: number) => void;
+  onRemoveTruckLoad: (binId: number, trailers: number) => void;
   onResetTrailerCount: (binId: number) => void;
   onUpdateGrainType: (binId: number, grainType: string) => void;
   onAddWagonLoad: (binId: number, wagons: number) => void;
   onRemoveWagonLoad: (binId: number, wagons: number) => void;
   onResetWagonCount: (binId: number) => void;
+  onManualInload?: (binId: number, tons: number, loadType?: 'trailer' | 'wagon' | 'custom') => void;
+  onManualOutload?: (binId: number, tons: number, loadType?: 'trailer' | 'wagon' | 'custom') => void;
   onDeleteActivityLog?: (binId: number, logId: string) => void;
   onUndoLastActivity?: (binId: number) => void;
 }
@@ -42,12 +45,14 @@ export function BinCard({
   onReset,
   onManualFillUpdate,
   onAddTruckLoad,
-  onRemoveTrailerLoad,
+  onRemoveTruckLoad,
   onResetTrailerCount,
   onUpdateGrainType,
   onAddWagonLoad,
   onRemoveWagonLoad,
   onResetWagonCount,
+  onManualInload,
+  onManualOutload,
   onDeleteActivityLog,
   onUndoLastActivity,
 }: BinCardProps) {
@@ -64,6 +69,10 @@ export function BinCard({
   const [isHoldingWagonOutload, setIsHoldingWagonOutload] = useState(false);
   const [holdProgress, setHoldProgress] = useState(0);
   const [holdTimer, setHoldTimer] = useState<NodeJS.Timeout | null>(null);
+
+  // Manual load dialog states
+  const [isManualInloadDialogOpen, setIsManualInloadDialogOpen] = useState(false);
+  const [isManualOutloadDialogOpen, setIsManualOutloadDialogOpen] = useState(false);
 
   // Update editValue when metrics change (but not during editing)
   useEffect(() => {
@@ -139,6 +148,18 @@ export function BinCard({
     setIsEditingGrainType(false);
   };
 
+  const handleManualInload = (tons: number, loadType?: 'trailer' | 'wagon' | 'custom') => {
+    if (onManualInload) {
+      onManualInload(bin.id, tons, loadType);
+    }
+  };
+
+  const handleManualOutload = (tons: number, loadType?: 'trailer' | 'wagon' | 'custom') => {
+    if (onManualOutload) {
+      onManualOutload(bin.id, tons, loadType);
+    }
+  };
+
   // Hold to press functions
   const startHold = (action: 'start' | 'inload' | 'outload' | 'wagonInload' | 'wagonOutload') => {
     console.log('=== START HOLD DEBUG ===');
@@ -189,7 +210,7 @@ export function BinCard({
           onAddTruckLoad(bin.id, 1);
           setIsHoldingInload(false);
         } else if (action === 'outload') {
-          onRemoveTrailerLoad(bin.id, 1);
+          onRemoveTruckLoad(bin.id, 1);
           setIsHoldingOutload(false);
         } else if (action === 'wagonInload') {
           onAddWagonLoad(bin.id, 1);
@@ -462,6 +483,17 @@ export function BinCard({
                     ~{metrics.estimatedWagonsToFull} wagons to full
                   </p>
                 </div>
+
+                {/* Manual Inload Button */}
+                <Button
+                  variant="outline"
+                  onClick={() => setIsManualInloadDialogOpen(true)}
+                  disabled={bin.isFilling || metrics.fillPercentage >= 100}
+                  className="w-full text-xs"
+                >
+                  <Plus className="w-3 h-3 mr-1" />
+                  Manual Inload
+                </Button>
               </TabsContent>
               
               <TabsContent value="outload" className="space-y-3 mt-4">
@@ -544,8 +576,20 @@ export function BinCard({
                     )}
                   </div>
                 </div>
+
+                {/* Manual Outload Button */}
+                <Button
+                  variant="outline"
+                  onClick={() => setIsManualOutloadDialogOpen(true)}
+                  disabled={bin.isFilling || metrics.fillPercentage <= 0}
+                  className="w-full text-xs"
+                >
+                  <Minus className="w-3 h-3 mr-1" />
+                  Manual Outload
+                </Button>
               </TabsContent>
             </Tabs>
+
 
             {/* Control Buttons */}
             {!bin.isFilling ? (
@@ -600,6 +644,25 @@ export function BinCard({
           </TabsContent>
         </Tabs>
       </CardContent>
+
+      {/* Manual Load Dialogs */}
+      <ManualLoadDialog
+        isOpen={isManualInloadDialogOpen}
+        onClose={() => setIsManualInloadDialogOpen(false)}
+        onConfirm={handleManualInload}
+        type="inload"
+        binName={bin.name}
+        systemSettings={systemSettings}
+      />
+
+      <ManualLoadDialog
+        isOpen={isManualOutloadDialogOpen}
+        onClose={() => setIsManualOutloadDialogOpen(false)}
+        onConfirm={handleManualOutload}
+        type="outload"
+        binName={bin.name}
+        systemSettings={systemSettings}
+      />
     </Card>
   );
 }

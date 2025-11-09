@@ -21,6 +21,10 @@ const getActionIcon = (action: ActivityLog['action']) => {
       return <RotateCcw className="h-4 w-4 text-orange-500" />;
     case 'manual_fill':
       return <Package className="h-4 w-4 text-blue-500" />;
+    case 'manual_inload':
+      return <Package className="h-4 w-4 text-green-500" />;
+    case 'manual_outload':
+      return <Package className="h-4 w-4 text-red-500" />;
     case 'truck_load':
       return <Truck className="h-4 w-4 text-purple-500" />;
     case 'truck_remove':
@@ -50,6 +54,10 @@ const getActionBadgeVariant = (action: ActivityLog['action']) => {
       return 'secondary';
     case 'manual_fill':
       return 'outline';
+    case 'manual_inload':
+      return 'default';
+    case 'manual_outload':
+      return 'destructive';
     case 'truck_load':
       return 'default';
     case 'truck_remove':
@@ -91,6 +99,10 @@ const formatActionText = (action: ActivityLog['action']) => {
       return 'Reset';
     case 'manual_fill':
       return 'Manual Fill';
+    case 'manual_inload':
+      return 'Manual Inload';
+    case 'manual_outload':
+      return 'Manual Outload';
     case 'truck_load':
       return 'Truck Load';
     case 'truck_remove':
@@ -189,7 +201,7 @@ export function ActivityTab({ activityLogs, binId, onDeleteActivityLog, onUndoLa
                 {onDeleteActivityLog && (
                   <button
                     onClick={() => onDeleteActivityLog(binId, log.id)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-destructive/10 rounded-md"
+                    className="p-1 hover:bg-destructive/10 rounded-md transition-colors"
                     title="Delete activity log"
                   >
                     <X className="h-4 w-4 text-destructive" />

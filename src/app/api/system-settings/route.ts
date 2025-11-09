@@ -6,6 +6,13 @@ interface SystemSettings {
   tonsPerTrailer: number;
   tonsPerWagon: number;
   tonsPerFoot: number;
+  notifications?: {
+    enabled: boolean;
+    thresholdFeet: number;
+    soundEnabled: boolean;
+    requireInteraction: boolean;
+    cooldownMinutes: number;
+  };
 }
 
 interface SystemSettingsWithId extends SystemSettings {
@@ -24,6 +31,13 @@ export async function GET() {
       tonsPerTrailer: 25,
       tonsPerWagon: 50,
       tonsPerFoot: 25,
+      notifications: {
+        enabled: true,
+        thresholdFeet: 10,
+        soundEnabled: true,
+        requireInteraction: true,
+        cooldownMinutes: 30,
+      },
     };
     
     return NextResponse.json({ 
@@ -47,7 +61,8 @@ export async function POST(request: NextRequest) {
     // Validate required fields
     const requiredFields = ['elevatorSpeed', 'tonsPerTrailer', 'tonsPerWagon', 'tonsPerFoot'];
     for (const field of requiredFields) {
-      if (!(field in settings) || typeof settings[field as keyof SystemSettings] !== 'number' || settings[field as keyof SystemSettings] <= 0) {
+      const value = settings[field as keyof SystemSettings];
+      if (!(field in settings) || typeof value !== 'number' || value <= 0) {
         return NextResponse.json(
           { success: false, error: `Invalid or missing ${field}` },
           { status: 400 }
