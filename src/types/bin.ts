@@ -20,6 +20,8 @@ export interface Bin {
   trailerCount: number;
   wagonCount: number;
   startTime?: Date;
+  lastUpdateTime?: Date; // Track when the bin was last updated for persistent timing
+  totalElapsedMinutes?: number; // Accumulated elapsed time for persistent timing
   activityLogs: ActivityLog[];
 }
 

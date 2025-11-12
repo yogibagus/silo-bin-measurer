@@ -22,6 +22,7 @@ export function Dashboard() {
   }, []);
   const {
     bins,
+    localBins,
     systemSettings,
     isLoading,
     startFilling,

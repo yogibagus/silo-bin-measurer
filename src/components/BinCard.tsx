@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Bin, BinMetrics } from '@/types/bin';
-import { Play, Pause, RotateCcw, Edit, Save, X, Plus, Minus } from 'lucide-react';
+import { Play, Pause, RotateCcw, Edit, Save, X, Plus, Minus, AlertTriangle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { ActivityTab } from './ActivityTab';
 import { ManualLoadDialog } from './ManualLoadDialog';
@@ -260,8 +260,11 @@ export function BinCard({
     return 'Empty';
   };
 
+  // Check if bin drop is required (10 ft or less remaining)
+  const isBinDropRequired = metrics.remainingCapacityFeet <= 10;
+
   return (
-    <Card className="w-full">
+    <Card className={`w-full ${isBinDropRequired ? 'border-2 border-red-500 bg-red-50' : ''}`}>
       <CardHeader className="pb-0">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
@@ -302,6 +305,17 @@ export function BinCard({
             {getStatusText()}
           </Badge>
         </div>
+        
+        {/* Bin Drop Alert - Right after title and grade */}
+        {isBinDropRequired && (
+          <div className="bg-red-500 text-white p-2 mt-2 rounded-lg flex items-center gap-2 animate-pulse">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="font-bold text-xs">Bin Drop Required!</p>
+              <p className="text-xs opacity-90">Only {metrics.remainingCapacityFeet.toFixed(1)} ft remaining</p>
+            </div>
+          </div>
+        )}
       </CardHeader>
       <hr />
       <CardContent className="p-0">

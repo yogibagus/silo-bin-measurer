@@ -29,8 +29,17 @@ export function formatTime(minutes: number): string {
   }
 }
 
-export function calculateElapsedTime(startTime: Date): string {
+export function calculateElapsedTime(startTime: Date, lastUpdateTime?: Date, totalElapsedMinutes?: number): string {
   const now = new Date();
+  
+  // If we have persistent timing data, use it
+  if (lastUpdateTime && totalElapsedMinutes !== undefined) {
+    const elapsedSinceLastUpdate = (now.getTime() - lastUpdateTime.getTime()) / (1000 * 60);
+    const totalElapsed = totalElapsedMinutes + elapsedSinceLastUpdate;
+    return formatTime(totalElapsed);
+  }
+  
+  // Fallback to simple calculation
   const elapsedMs = now.getTime() - startTime.getTime();
   const elapsedMinutes = elapsedMs / (1000 * 60);
   return formatTime(elapsedMinutes);
@@ -62,7 +71,9 @@ export function calculateEstimatedWagonsToFull(bin: Bin, systemSettings: SystemS
 
 export function calculateBinMetrics(bin: Bin, systemSettings: SystemSettings): BinMetrics {
   const fillPercentage = calculateFillPercentage(bin.currentFillFeet, bin.maxCapacityFeet);
-  const elapsedTime = (bin.isFilling && bin.startTime) ? calculateElapsedTime(bin.startTime) : '0s';
+  const elapsedTime = (bin.isFilling && bin.startTime) 
+    ? calculateElapsedTime(bin.startTime, bin.lastUpdateTime, bin.totalElapsedMinutes) 
+    : '0s';
   const estimatedTimeToFull = calculateEstimatedTimeToFull(bin, systemSettings);
   const remainingCapacityTons = bin.maxCapacityTons - bin.currentFillTons;
   const remainingCapacityFeet = bin.maxCapacityFeet - bin.currentFillFeet;

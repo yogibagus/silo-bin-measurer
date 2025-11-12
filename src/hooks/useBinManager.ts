@@ -100,6 +100,7 @@ export function useBinManager() {
           const binsWithDates = loadedBins.map((bin: any) => ({
             ...bin,
             startTime: bin.startTime ? new Date(bin.startTime) : undefined,
+            lastUpdateTime: bin.lastUpdateTime ? new Date(bin.lastUpdateTime) : undefined,
             activityLogs: bin.activityLogs || [], // Ensure activityLogs is always an array
           }));
           setBins(binsWithDates);
@@ -150,30 +151,58 @@ export function useBinManager() {
     }
   }, [systemSettings, isLoading]);
 
-  // Update fill levels for active bins and check notifications
+  // Local state for real-time updates (without triggering API saves)
+  const [localBins, setLocalBins] = useState<Bin[]>([]);
+
+  // Sync local bins with actual bins when bins change
+  useEffect(() => {
+    if (!isLoading) {
+      setLocalBins(bins);
+    }
+  }, [bins, isLoading]);
+
+  // Update fill levels for active bins locally (every second for UI)
   useEffect(() => {
     if (isLoading) return;
     
     const interval = setInterval(() => {
-      setBins((currentBins) => {
+      setLocalBins((currentLocalBins) => {
         // Check if any bin is currently filling
-        const hasActiveFilling = currentBins.some(bin => bin.isFilling);
-        if (!hasActiveFilling) return currentBins;
+        const hasActiveFilling = currentLocalBins.some(bin => bin.isFilling);
+        if (!hasActiveFilling) return currentLocalBins;
         
-        return currentBins.map((bin) => {
+        return currentLocalBins.map((bin) => {
           if (bin.isFilling) {
-            // Incremental update: add only 1 second worth of filling using dynamic systemSettings
+            const now = new Date();
+            
+            // Calculate elapsed time since last update
+            let elapsedMinutes = 0;
+            if (bin.lastUpdateTime && bin.totalElapsedMinutes !== undefined) {
+              // Use persistent timing
+              elapsedMinutes = (now.getTime() - bin.lastUpdateTime.getTime()) / (1000 * 60);
+            } else if (bin.startTime) {
+              // Fallback to start time
+              elapsedMinutes = (now.getTime() - bin.startTime.getTime()) / (1000 * 60);
+            }
+            
+            // Calculate how much should have been added since last update
             const tonsPerMinute = systemSettings.elevatorSpeed / 60;
-            const addedTons = tonsPerMinute / 60; // tons per second
+            const addedTons = elapsedMinutes * tonsPerMinute;
             const addedFeet = tonsToFeet(addedTons);
             
-            const newFillFeet = Math.min(bin.currentFillFeet + addedFeet, bin.maxCapacityFeet);
-            const newFillTons = Math.min(bin.currentFillTons + addedTons, bin.maxCapacityTons);
+            // Calculate target fill levels
+            const targetFillFeet = Math.min(bin.currentFillFeet + addedFeet, bin.maxCapacityFeet);
+            const targetFillTons = Math.min(bin.currentFillTons + addedTons, bin.maxCapacityTons);
+            
+            // Update persistent timing data
+            const newTotalElapsedMinutes = (bin.totalElapsedMinutes || 0) + elapsedMinutes;
             
             const updatedBin = {
               ...bin,
-              currentFillFeet: newFillFeet,
-              currentFillTons: newFillTons,
+              currentFillFeet: targetFillFeet,
+              currentFillTons: targetFillTons,
+              lastUpdateTime: now,
+              totalElapsedMinutes: newTotalElapsedMinutes,
             };
             
             // Check threshold notification for this bin
@@ -183,7 +212,7 @@ export function useBinManager() {
             checkPeriodicNotification(updatedBin, systemSettings);
             
             // Stop filling if bin is full
-            if (newFillFeet >= bin.maxCapacityFeet) {
+            if (targetFillFeet >= bin.maxCapacityFeet) {
               return {
                 ...updatedBin,
                 isFilling: false,
@@ -197,19 +226,46 @@ export function useBinManager() {
           return bin;
         });
       });
-    }, 1000); // Update every second for smooth real-time updates
+    }, 1000); // Update every second for real-time display
 
     return () => clearInterval(interval);
   }, [systemSettings, isLoading, tonsToFeet, checkThresholdNotification, checkPeriodicNotification]);
 
+  // Sync local bins to actual bins every 5 seconds (for persistence)
+  useEffect(() => {
+    if (isLoading) return;
+    
+    const interval = setInterval(() => {
+      setBins((currentBins) => {
+        // Check if any bin is currently filling
+        const hasActiveFilling = currentBins.some(bin => bin.isFilling);
+        if (!hasActiveFilling) return currentBins;
+        
+        // Sync with local state
+        return localBins.map((localBin) => {
+          const currentBin = currentBins.find(b => b.id === localBin.id);
+          if (currentBin && currentBin.isFilling) {
+            return localBin; // Use local state for filling bins
+          }
+          return currentBin || localBin; // Use current state for non-filling bins
+        });
+      });
+    }, 5000); // Sync every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [isLoading, localBins]);
+
   const startFilling = useCallback((binId: number) => {
+    const now = new Date();
     setBins((currentBins) => {
       const updatedBins = currentBins.map((bin) =>
         bin.id === binId
           ? {
               ...bin,
               isFilling: true,
-              startTime: new Date(),
+              startTime: now,
+              lastUpdateTime: now,
+              totalElapsedMinutes: 0,
             }
           : bin
       );
@@ -232,16 +288,29 @@ export function useBinManager() {
   }, [addActivityLog, checkThresholdNotificationAnyState, systemSettings]);
 
   const stopFilling = useCallback((binId: number) => {
-    setBins((currentBins) =>
-      currentBins.map((bin) =>
-        bin.id === binId
-          ? {
-              ...bin,
-              isFilling: false,
-            }
-          : bin
-      )
-    );
+    // Get the current local bin state to preserve the updated fill levels
+    setLocalBins((currentLocalBins) => {
+      const localBin = currentLocalBins.find(b => b.id === binId);
+      if (!localBin) return currentLocalBins;
+      
+      // Update the actual bins with the current values from localBins
+      setBins((currentBins) =>
+        currentBins.map((bin) =>
+          bin.id === binId
+            ? {
+                ...bin,
+                isFilling: false,
+                currentFillFeet: localBin.currentFillFeet,
+                currentFillTons: localBin.currentFillTons,
+                lastUpdateTime: localBin.lastUpdateTime,
+                totalElapsedMinutes: localBin.totalElapsedMinutes,
+              }
+            : bin
+        )
+      );
+      
+      return currentLocalBins;
+    });
     
     // Add activity log
     addActivityLog(binId, 'stop_filling', 'Stopped filling bin');
@@ -266,6 +335,23 @@ export function useBinManager() {
   }, [addActivityLog, checkThresholdNotificationAnyState, systemSettings, tonsToFeet]);
 
   const resetBin = useCallback((binId: number) => {
+    // Update both localBins and bins to ensure consistency
+    setLocalBins((currentLocalBins) =>
+      currentLocalBins.map((bin) =>
+        bin.id === binId
+          ? {
+              ...bin,
+              isFilling: false,
+              currentFillFeet: 0,
+              currentFillTons: 0,
+              startTime: undefined,
+              lastUpdateTime: undefined,
+              totalElapsedMinutes: 0,
+            }
+          : bin
+      )
+    );
+    
     setBins((currentBins) =>
       currentBins.map((bin) =>
         bin.id === binId
@@ -275,6 +361,8 @@ export function useBinManager() {
               currentFillFeet: 0,
               currentFillTons: 0,
               startTime: undefined,
+              lastUpdateTime: undefined,
+              totalElapsedMinutes: 0,
             }
           : bin
       )
@@ -296,6 +384,8 @@ export function useBinManager() {
                   currentFillFeet: 0,
                   currentFillTons: 0,
                   startTime: undefined,
+                  lastUpdateTime: undefined,
+                  totalElapsedMinutes: 0,
                 }
               : bin
           );
@@ -340,17 +430,25 @@ export function useBinManager() {
   }, [addActivityLog, checkThresholdNotificationAnyState, systemSettings, feetToTons]);
 
   const getBinMetrics = useCallback((binId: number) => {
+    // Use localBins for real-time data, fallback to bins for non-filling bins
+    const localBin = localBins.find((b) => b.id === binId);
     const bin = bins.find((b) => b.id === binId);
-    if (!bin) return null;
-    return calculateBinMetrics(bin, systemSettings);
-  }, [bins, systemSettings]);
+    const activeBin = localBin || bin;
+    if (!activeBin) return null;
+    return calculateBinMetrics(activeBin, systemSettings);
+  }, [bins, localBins, systemSettings]);
 
   const getAllBinMetrics = useCallback(() => {
-    return bins.map((bin) => ({
-      bin,
-      metrics: calculateBinMetrics(bin, systemSettings),
-    }));
-  }, [bins, systemSettings]);
+    // Use localBins for real-time data, fallback to bins for non-filling bins
+    return localBins.map((localBin) => {
+      const bin = bins.find((b) => b.id === localBin.id);
+      const activeBin = localBin || bin;
+      return {
+        bin: activeBin,
+        metrics: calculateBinMetrics(activeBin, systemSettings),
+      };
+    });
+  }, [bins, localBins, systemSettings]);
 
   const updateSystemSettings = useCallback((newSettings: Partial<SystemSettings>) => {
     setSystemSettings((current) => ({
@@ -745,6 +843,7 @@ export function useBinManager() {
 
   return {
     bins,
+    localBins,
     systemSettings,
     isLoading,
     startFilling,
