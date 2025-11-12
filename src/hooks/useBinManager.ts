@@ -19,6 +19,7 @@ const getDefaultBins = (): Bin[] => [
     trailerCount: 0,
     wagonCount: 0,
     activityLogs: [],
+    notes: [],
   },
   {
     id: 2,
@@ -32,6 +33,7 @@ const getDefaultBins = (): Bin[] => [
     trailerCount: 0,
     wagonCount: 0,
     activityLogs: [],
+    notes: [],
   },
 ];
 
@@ -49,107 +51,289 @@ const getDefaultSystemSettings = (): SystemSettings => ({
   },
 });
 
+// Local storage keys
+const STORAGE_KEYS = {
+  BINS: 'silo-bins-data',
+  SYSTEM_SETTINGS: 'silo-system-settings',
+  LAST_SYNC: 'silo-last-sync',
+};
+
+// Helper functions for localStorage
+const saveToLocalStorage = (key: string, data: any) => {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem(key, JSON.stringify(data));
+    }
+  } catch (error) {
+    console.warn(`Failed to save ${key} to localStorage:`, error);
+  }
+};
+
+const loadFromLocalStorage = (key: string, defaultValue: any) => {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const item = localStorage.getItem(key);
+      return item ? JSON.parse(item) : defaultValue;
+    }
+    return defaultValue;
+  } catch (error) {
+    console.warn(`Failed to load ${key} from localStorage:`, error);
+    return defaultValue;
+  }
+};
+
+// Data validation functions
+const validateBin = (bin: any): bin is Bin => {
+  return (
+    bin &&
+    typeof bin.id === 'number' &&
+    typeof bin.name === 'string' &&
+    typeof bin.grainType === 'string' &&
+    typeof bin.isFilling === 'boolean' &&
+    typeof bin.currentFillFeet === 'number' &&
+    typeof bin.currentFillTons === 'number' &&
+    typeof bin.maxCapacityFeet === 'number' &&
+    typeof bin.maxCapacityTons === 'number' &&
+    typeof bin.trailerCount === 'number' &&
+    typeof bin.wagonCount === 'number' &&
+    Array.isArray(bin.activityLogs) &&
+    Array.isArray(bin.notes || [])
+  );
+};
+
+const validateSystemSettings = (settings: any): settings is SystemSettings => {
+  return (
+    settings &&
+    typeof settings.elevatorSpeed === 'number' &&
+    typeof settings.tonsPerFoot === 'number' &&
+    typeof settings.tonsPerTrailer === 'number' &&
+    typeof settings.tonsPerWagon === 'number' &&
+    (!settings.notifications || 
+     (typeof settings.notifications.enabled === 'boolean' &&
+      typeof settings.notifications.thresholdFeet === 'number'))
+  );
+};
+
 export function useBinManager() {
-  const [bins, setBins] = useState<Bin[]>(getDefaultBins());
-  const [systemSettings, setSystemSettings] = useState<SystemSettings>(getDefaultSystemSettings());
+  const [bins, setBins] = useState<Bin[]>(() => 
+    loadFromLocalStorage(STORAGE_KEYS.BINS, getDefaultBins())
+  );
+  const [systemSettings, setSystemSettings] = useState<SystemSettings>(() => 
+    loadFromLocalStorage(STORAGE_KEYS.SYSTEM_SETTINGS, getDefaultSystemSettings())
+  );
   const [isLoading, setIsLoading] = useState(true);
+  const [isOnline, setIsOnline] = useState(true);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(() => {
+    const timestamp = loadFromLocalStorage(STORAGE_KEYS.LAST_SYNC, null);
+    return timestamp ? new Date(timestamp) : null;
+  });
   const { 
     checkThresholdNotification,
     checkThresholdNotificationAnyState,
     checkPeriodicNotification,
   } = useNotifications();
 
-  // Helper function to add activity log
-  const addActivityLog = useCallback((binId: number, action: ActivityLog['action'], details: string, oldValue?: number, newValue?: number, unit?: string) => {
-    const newLog: ActivityLog = {
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      timestamp: new Date(),
-      action,
-      details,
-      oldValue,
-      newValue,
-      unit,
+  // Monitor online/offline status
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    setIsOnline(navigator.onLine);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
     };
-
-    setBins((currentBins) =>
-      currentBins.map((bin) =>
-        bin.id === binId
-          ? {
-              ...bin,
-              activityLogs: [newLog, ...(bin.activityLogs || [])].slice(0, 50), // Keep only last 50 logs
-            }
-          : bin
-      )
-    );
   }, []);
 
-  // Load data from MongoDB on mount
+  // Save to localStorage whenever bins or settings change
+  useEffect(() => {
+    if (!isLoading) {
+      saveToLocalStorage(STORAGE_KEYS.BINS, bins);
+    }
+  }, [bins, isLoading]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      saveToLocalStorage(STORAGE_KEYS.SYSTEM_SETTINGS, systemSettings);
+    }
+  }, [systemSettings, isLoading]);
+
+  // Load data from MongoDB on mount with fallback to localStorage
   useEffect(() => {
     const loadData = async () => {
       try {
         setIsLoading(true);
         
-        // Load bins and system settings in parallel
-        const [loadedBins, loadedSettings] = await Promise.all([
-          fetchBins(),
-          fetchSystemSettings()
-        ]);
-        
-        if (loadedBins.length > 0) {
-          // Convert date strings back to Date objects if they exist
-          const binsWithDates = loadedBins.map((bin: any) => ({
-            ...bin,
-            startTime: bin.startTime ? new Date(bin.startTime) : undefined,
-            lastUpdateTime: bin.lastUpdateTime ? new Date(bin.lastUpdateTime) : undefined,
-            activityLogs: bin.activityLogs || [], // Ensure activityLogs is always an array
-          }));
-          setBins(binsWithDates);
-        } else {
-          // If no bins exist, save default bins to 
-          await updateBins(getDefaultBins());
+        if (!isOnline) {
+          console.log('Offline mode: Using localStorage data');
+          setIsLoading(false);
+          return;
         }
         
-        setSystemSettings({
-          ...loadedSettings,
-          notifications: {
-            enabled: true,
-            thresholdFeet: 10,
-            soundEnabled: true,
-            requireInteraction: true,
-            cooldownMinutes: 30,
-            ...(loadedSettings as any).notifications,
-          },
-        });
+        // Load bins and system settings in parallel with timeout
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Request timeout')), 10000)
+        );
+        
+        const [loadedBins, loadedSettings] = await Promise.race([
+          Promise.all([
+            fetchBins().catch(error => {
+              console.error('Failed to fetch bins from MongoDB:', error);
+              return [];
+            }),
+            fetchSystemSettings().catch(error => {
+              console.error('Failed to fetch system settings from MongoDB:', error);
+              return null;
+            })
+          ]),
+          timeoutPromise
+        ]) as [any[], any];
+        
+        // Validate and apply loaded bins
+        if (Array.isArray(loadedBins) && loadedBins.length > 0) {
+          const validBins = loadedBins.filter(validateBin);
+          if (validBins.length > 0) {
+            // Convert date strings back to Date objects if they exist
+            const binsWithDates = validBins.map((bin: any) => ({
+              ...bin,
+              startTime: bin.startTime ? new Date(bin.startTime) : undefined,
+              lastUpdateTime: bin.lastUpdateTime ? new Date(bin.lastUpdateTime) : undefined,
+              activityLogs: bin.activityLogs || [], // Ensure activityLogs is always an array
+              notes: bin.notes || [], // Ensure notes is always an array
+            }));
+            setBins(binsWithDates);
+            console.log('Loaded bins from MongoDB:', binsWithDates.length);
+          } else {
+            console.warn('No valid bins found in MongoDB, using localStorage data');
+          }
+        } else {
+          console.log('No bins found in MongoDB, using localStorage data');
+        }
+        
+        // Validate and apply loaded system settings
+        if (loadedSettings && validateSystemSettings(loadedSettings)) {
+          setSystemSettings({
+            ...loadedSettings,
+            notifications: {
+              enabled: true,
+              thresholdFeet: 10,
+              soundEnabled: true,
+              requireInteraction: true,
+              cooldownMinutes: 30,
+              ...(loadedSettings as any).notifications,
+            },
+          });
+          console.log('Loaded system settings from MongoDB');
+        } else {
+          console.warn('Invalid or no system settings found in MongoDB, using localStorage data');
+        }
+        
+        // Update last sync time
+        const now = new Date();
+        setLastSyncTime(now);
+        saveToLocalStorage(STORAGE_KEYS.LAST_SYNC, now.toISOString());
+        
       } catch (error) {
         console.error('Error loading data from MongoDB:', error);
-        // Fallback to defaults
-        setBins(getDefaultBins());
-        setSystemSettings(getDefaultSystemSettings());
+        console.log('Falling back to localStorage data');
       } finally {
         setIsLoading(false);
       }
     };
 
     loadData();
-  }, []);
+  }, [isOnline]);
 
-  // Save to MongoDB whenever bins change (but not during loading)
+  // Save to MongoDB whenever bins change (but not during loading and only when online)
   useEffect(() => {
-    if (!isLoading) {
-      updateBins(bins).catch(error => {
-        console.error('Error saving bins to MongoDB:', error);
-      });
+    if (!isLoading && isOnline) {
+      const saveData = async () => {
+        try {
+          const success = await updateBins(bins);
+          if (success) {
+            const now = new Date();
+            setLastSyncTime(now);
+            saveToLocalStorage(STORAGE_KEYS.LAST_SYNC, now.toISOString());
+            console.log('Successfully synced bins to MongoDB');
+          }
+        } catch (error) {
+          console.error('Error saving bins to MongoDB:', error);
+        }
+      };
+      
+      // Debounce saves to avoid too frequent API calls
+      const timeoutId = setTimeout(saveData, 2000);
+      return () => clearTimeout(timeoutId);
     }
-  }, [bins, isLoading]);
+  }, [bins, isLoading, isOnline]);
 
-  // Save to MongoDB whenever system settings change (but not during loading)
+  // Save to MongoDB whenever system settings change (but not during loading and only when online)
   useEffect(() => {
-    if (!isLoading) {
-      updateSystemSettingsAPI(systemSettings).catch(error => {
-        console.error('Error saving system settings to MongoDB:', error);
-      });
+    if (!isLoading && isOnline) {
+      const saveData = async () => {
+        try {
+          const success = await updateSystemSettingsAPI(systemSettings);
+          if (success) {
+            console.log('Successfully synced system settings to MongoDB');
+          }
+        } catch (error) {
+          console.error('Error saving system settings to MongoDB:', error);
+        }
+      };
+      
+      // Debounce saves to avoid too frequent API calls
+      const timeoutId = setTimeout(saveData, 1000);
+      return () => clearTimeout(timeoutId);
     }
-  }, [systemSettings, isLoading]);
+  }, [systemSettings, isLoading, isOnline]);
+
+  // Periodic sync when online
+  useEffect(() => {
+    if (!isOnline || isLoading) return;
+    
+    const interval = setInterval(async () => {
+      try {
+        // Check if we have newer data on server
+        const serverBins = await fetchBins();
+        if (Array.isArray(serverBins) && serverBins.length > 0) {
+          const validServerBins = serverBins.filter(validateBin);
+          if (validServerBins.length > 0) {
+            // Simple comparison: if server has more recent data, sync it
+            // This is a basic implementation - you might want more sophisticated conflict resolution
+            const lastServerUpdate = validServerBins.reduce((latest, bin) => {
+              const binTime = bin.lastUpdateTime ? new Date(bin.lastUpdateTime).getTime() : 0;
+              return Math.max(latest, binTime);
+            }, 0);
+            
+            const lastLocalUpdate = bins.reduce((latest, bin) => {
+              const binTime = bin.lastUpdateTime ? new Date(bin.lastUpdateTime).getTime() : 0;
+              return Math.max(latest, binTime);
+            }, 0);
+            
+            if (lastServerUpdate > lastLocalUpdate) {
+              console.log('Server has newer data, syncing...');
+              const binsWithDates = validServerBins.map((bin: any) => ({
+                ...bin,
+                startTime: bin.startTime ? new Date(bin.startTime) : undefined,
+                lastUpdateTime: bin.lastUpdateTime ? new Date(bin.lastUpdateTime) : undefined,
+                activityLogs: bin.activityLogs || [],
+                notes: bin.notes || [],
+              }));
+              setBins(binsWithDates);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error during periodic sync:', error);
+      }
+    }, 60000); // Sync every minute when online
+
+    return () => clearInterval(interval);
+  }, [isOnline, isLoading, bins]);
 
   // Local state for real-time updates (without triggering API saves)
   const [localBins, setLocalBins] = useState<Bin[]>([]);
@@ -254,6 +438,30 @@ export function useBinManager() {
 
     return () => clearInterval(interval);
   }, [isLoading, localBins]);
+
+  // Helper function to add activity log
+  const addActivityLog = useCallback((binId: number, action: ActivityLog['action'], details: string, oldValue?: number, newValue?: number, unit?: string) => {
+    const newLog: ActivityLog = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: new Date(),
+      action,
+      details,
+      oldValue,
+      newValue,
+      unit,
+    };
+
+    setBins((currentBins) =>
+      currentBins.map((bin) =>
+        bin.id === binId
+          ? {
+              ...bin,
+              activityLogs: [newLog, ...(bin.activityLogs || [])].slice(0, 50), // Keep only last 50 logs
+            }
+          : bin
+      )
+    );
+  }, []);
 
   const startFilling = useCallback((binId: number) => {
     const now = new Date();
@@ -732,6 +940,94 @@ export function useBinManager() {
     });
   }, [addActivityLog, checkThresholdNotificationAnyState, systemSettings, tonsToFeet]);
 
+  // Note management functions
+  const addNote = useCallback((binId: number, title: string, content: string, priority: 'low' | 'medium' | 'high' = 'medium') => {
+    const newNote = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      binId,
+      title,
+      content,
+      timestamp: new Date(),
+      isRead: false,
+      priority,
+    };
+
+    setBins((currentBins) =>
+      currentBins.map((bin) =>
+        bin.id === binId
+          ? {
+              ...bin,
+              notes: [newNote, ...(bin.notes || [])],
+            }
+          : bin
+      )
+    );
+  }, []);
+
+  const updateNote = useCallback((binId: number, noteId: string, title: string, content: string, priority: 'low' | 'medium' | 'high') => {
+    setBins((currentBins) =>
+      currentBins.map((bin) =>
+        bin.id === binId
+          ? {
+              ...bin,
+              notes: (bin.notes || []).map((note) =>
+                note.id === noteId
+                  ? { ...note, title, content, priority, timestamp: new Date() }
+                  : note
+              ),
+            }
+          : bin
+      )
+    );
+  }, []);
+
+  const deleteNote = useCallback((binId: number, noteId: string) => {
+    setBins((currentBins) =>
+      currentBins.map((bin) =>
+        bin.id === binId
+          ? {
+              ...bin,
+              notes: (bin.notes || []).filter((note) => note.id !== noteId),
+            }
+          : bin
+      )
+    );
+  }, []);
+
+  const markNoteAsRead = useCallback((binId: number, noteId: string) => {
+    setBins((currentBins) =>
+      currentBins.map((bin) =>
+        bin.id === binId
+          ? {
+              ...bin,
+              notes: (bin.notes || []).map((note) =>
+                note.id === noteId ? { ...note, isRead: true } : note
+              ),
+            }
+          : bin
+      )
+    );
+  }, []);
+
+  const markAllNotesAsRead = useCallback((binId: number) => {
+    setBins((currentBins) =>
+      currentBins.map((bin) =>
+        bin.id === binId
+          ? {
+              ...bin,
+              notes: (bin.notes || []).map((note) => ({ ...note, isRead: true })),
+            }
+          : bin
+      )
+    );
+  }, []);
+
+  const getUnreadNoteCount = useCallback((binId: number) => {
+    const bin = bins.find((b) => b.id === binId);
+    if (!bin || !bin.notes) return 0;
+    return bin.notes.filter((note) => !note.isRead).length;
+  }, [bins]);
+
   const undoLastActivity = useCallback((binId: number) => {
     setBins((currentBins) => {
       const bin = currentBins.find(b => b.id === binId);
@@ -846,6 +1142,8 @@ export function useBinManager() {
     localBins,
     systemSettings,
     isLoading,
+    isOnline,
+    lastSyncTime,
     startFilling,
     stopFilling,
     resetBin,
@@ -864,5 +1162,11 @@ export function useBinManager() {
     undoLastActivity,
     manualInload,
     manualOutload,
+    addNote,
+    updateNote,
+    deleteNote,
+    markNoteAsRead,
+    markAllNotesAsRead,
+    getUnreadNoteCount,
   };
 }

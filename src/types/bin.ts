@@ -1,11 +1,21 @@
 export interface ActivityLog {
   id: string;
   timestamp: Date;
-  action: 'start_filling' | 'stop_filling' | 'reset' | 'manual_fill' | 'manual_inload' | 'manual_outload' | 'truck_load' | 'truck_remove' | 'trailer_reset' | 'wagon_load' | 'wagon_remove' | 'wagon_reset' | 'grain_change' | 'notification_sent';
+  action: 'start_filling' | 'stop_filling' | 'reset' | 'manual_fill' | 'truck_load' | 'truck_remove' | 'trailer_reset' | 'grain_change' | 'wagon_load' | 'wagon_remove' | 'wagon_reset' | 'manual_inload' | 'manual_outload';
   details: string;
   oldValue?: number;
   newValue?: number;
   unit?: string;
+}
+
+export interface Note {
+  id: string;
+  binId: number;
+  title: string;
+  content: string;
+  timestamp: Date;
+  isRead: boolean;
+  priority: 'low' | 'medium' | 'high';
 }
 
 export interface Bin {
@@ -23,6 +33,7 @@ export interface Bin {
   lastUpdateTime?: Date; // Track when the bin was last updated for persistent timing
   totalElapsedMinutes?: number; // Accumulated elapsed time for persistent timing
   activityLogs: ActivityLog[];
+  notes: Note[];
 }
 
 export interface BinMetrics {

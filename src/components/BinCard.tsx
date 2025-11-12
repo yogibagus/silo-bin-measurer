@@ -10,6 +10,7 @@ import { Bin, BinMetrics } from '@/types/bin';
 import { Play, Pause, RotateCcw, Edit, Save, X, Plus, Minus, AlertTriangle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { ActivityTab } from './ActivityTab';
+import { NoteTab } from './NoteTab';
 import { ManualLoadDialog } from './ManualLoadDialog';
 
 interface BinCardProps {
@@ -34,6 +35,11 @@ interface BinCardProps {
   onManualOutload?: (binId: number, tons: number, loadType?: 'trailer' | 'wagon' | 'custom') => void;
   onDeleteActivityLog?: (binId: number, logId: string) => void;
   onUndoLastActivity?: (binId: number) => void;
+  onAddNote?: (binId: number, title: string, content: string, priority: 'low' | 'medium' | 'high') => void;
+  onUpdateNote?: (binId: number, noteId: string, title: string, content: string, priority: 'low' | 'medium' | 'high') => void;
+  onDeleteNote?: (binId: number, noteId: string) => void;
+  onMarkNoteAsRead?: (binId: number, noteId: string) => void;
+  onMarkAllNotesAsRead?: (binId: number) => void;
 }
 
 export function BinCard({
@@ -55,6 +61,11 @@ export function BinCard({
   onManualOutload,
   onDeleteActivityLog,
   onUndoLastActivity,
+  onAddNote,
+  onUpdateNote,
+  onDeleteNote,
+  onMarkNoteAsRead,
+  onMarkAllNotesAsRead,
 }: BinCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(metrics.remainingCapacityFeet.toString());
@@ -320,9 +331,17 @@ export function BinCard({
       <hr />
       <CardContent className="p-0">
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 mx-auto max-w-xs">
+          <TabsList className="grid w-full grid-cols-3 mx-auto max-w-xs">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
+            <TabsTrigger value="notes" className="relative">
+              Notes
+              {bin.notes && bin.notes.length > 0 && (
+                <Badge variant="destructive" className="ml-1 px-1 py-0 text-xs min-w-[16px] h-4">
+                  {bin.notes.length}
+                </Badge>
+              )}
+            </TabsTrigger>
           </TabsList>
           
           <TabsContent value="overview" className="space-y-3 sm:space-y-4 p-4 pt-2">
@@ -654,6 +673,16 @@ export function BinCard({
               binId={bin.id}
               onDeleteActivityLog={onDeleteActivityLog}
               onUndoLastActivity={onUndoLastActivity}
+            />
+          </TabsContent>
+          
+          <TabsContent value="notes" className="p-4 pt-2">
+            <NoteTab 
+              notes={bin.notes} 
+              binId={bin.id}
+              onAddNote={onAddNote}
+              onUpdateNote={onUpdateNote}
+              onDeleteNote={onDeleteNote}
             />
           </TabsContent>
         </Tabs>

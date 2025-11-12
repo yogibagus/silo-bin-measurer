@@ -25,6 +25,8 @@ export function Dashboard() {
     localBins,
     systemSettings,
     isLoading,
+    isOnline,
+    lastSyncTime,
     startFilling,
     stopFilling,
     resetBin,
@@ -42,6 +44,11 @@ export function Dashboard() {
     undoLastActivity,
     manualInload,
     manualOutload,
+    addNote,
+    updateNote,
+    deleteNote,
+    markNoteAsRead,
+    markAllNotesAsRead,
   } = useBinManager();
 
   const { 
@@ -306,44 +313,64 @@ export function Dashboard() {
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 text-sm">
-                <div>
-                  <p className="font-medium text-xs sm:text-sm">Elevator Speed</p>
-                  <p className="text-gray-600 text-xs sm:text-sm">{systemSettings.elevatorSpeed} tons/hr</p>
+              <div className="space-y-4">
+                {/* Connection Status */}
+                <div className={`p-3 rounded-lg ${isOnline ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-3 h-3 rounded-full ${isOnline ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}></div>
+                      <span className={`text-sm font-medium ${isOnline ? 'text-green-700' : 'text-red-700'}`}>
+                        {isOnline ? 'Online - Data syncing to cloud' : 'Offline - Using local storage'}
+                      </span>
+                    </div>
+                    {lastSyncTime && (
+                      <div className="text-xs text-gray-600">
+                        Last sync: {lastSyncTime.toLocaleString()}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <p className="font-medium text-xs sm:text-sm">Trailer Capacity</p>
-                  <p className="text-gray-600 text-xs sm:text-sm">{systemSettings.tonsPerTrailer} tons</p>
-                </div>
-                <div>
-                  <p className="font-medium text-xs sm:text-sm">Wagon Train Capacity</p>
-                  <p className="text-gray-600 text-xs sm:text-sm">{systemSettings.tonsPerWagon} tons</p>
-                </div>
-                <div>
-                  <p className="font-medium text-xs sm:text-sm">Conversion Rate</p>
-                  <p className="text-gray-600 text-xs sm:text-sm">1 ft = {systemSettings.tonsPerFoot} tons</p>
-                </div>
-                <div>
-                  <p className="font-medium text-xs sm:text-sm">Fill Rate</p>
-                  <p className="text-gray-600 text-xs sm:text-sm">
-                    {(systemSettings.elevatorSpeed / 60).toFixed(1)} t/min ({(systemSettings.elevatorSpeed / 60 / systemSettings.tonsPerFoot).toFixed(2)} ft/min)
-                  </p>
-                </div>
-                <div>
-                  <p className="font-medium text-xs sm:text-sm">Notifications</p>
-                  <p className="text-gray-600 text-xs sm:text-sm">
-                    {systemSettings.notifications?.enabled ? 'Enabled' : 'Disabled'} 
-                    {systemSettings.notifications?.enabled && ` (${systemSettings.notifications.thresholdFeet} ft)`}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    Status: {getNotificationStatus() === 'granted' ? '✅ Allowed' : 
-                            getNotificationStatus() === 'denied' ? '❌ Blocked' : 
-                            getNotificationStatus() === 'default' ? '⏳ Not Set' : '🚫 Unsupported'}
-                  </p>
-                </div>
-                <div>
-                  <p className="font-medium text-xs sm:text-sm">Last Updated</p>
-                  <p className="text-gray-600 text-xs sm:text-sm">{new Date().toLocaleString()}</p>
+
+                {/* System Settings Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 text-sm">
+                  <div>
+                    <p className="font-medium text-xs sm:text-sm">Elevator Speed</p>
+                    <p className="text-gray-600 text-xs sm:text-sm">{systemSettings.elevatorSpeed} tons/hr</p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-xs sm:text-sm">Trailer Capacity</p>
+                    <p className="text-gray-600 text-xs sm:text-sm">{systemSettings.tonsPerTrailer} tons</p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-xs sm:text-sm">Wagon Train Capacity</p>
+                    <p className="text-gray-600 text-xs sm:text-sm">{systemSettings.tonsPerWagon} tons</p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-xs sm:text-sm">Conversion Rate</p>
+                    <p className="text-gray-600 text-xs sm:text-sm">1 ft = {systemSettings.tonsPerFoot} tons</p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-xs sm:text-sm">Fill Rate</p>
+                    <p className="text-gray-600 text-xs sm:text-sm">
+                      {(systemSettings.elevatorSpeed / 60).toFixed(1)} t/min ({(systemSettings.elevatorSpeed / 60 / systemSettings.tonsPerFoot).toFixed(2)} ft/min)
+                    </p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-xs sm:text-sm">Notifications</p>
+                    <p className="text-gray-600 text-xs sm:text-sm">
+                      {systemSettings.notifications?.enabled ? 'Enabled' : 'Disabled'} 
+                      {systemSettings.notifications?.enabled && ` (${systemSettings.notifications.thresholdFeet} ft)`}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Status: {getNotificationStatus() === 'granted' ? '✅ Allowed' : 
+                              getNotificationStatus() === 'denied' ? '❌ Blocked' : 
+                              getNotificationStatus() === 'default' ? '⏳ Not Set' : '🚫 Unsupported'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-xs sm:text-sm">Last Updated</p>
+                    <p className="text-gray-600 text-xs sm:text-sm">{new Date().toLocaleString()}</p>
+                  </div>
                 </div>
               </div>
             )}
@@ -376,6 +403,11 @@ export function Dashboard() {
               onManualOutload={manualOutload}
               onDeleteActivityLog={deleteActivityLog}
               onUndoLastActivity={undoLastActivity}
+              onAddNote={addNote}
+              onUpdateNote={updateNote}
+              onDeleteNote={deleteNote}
+              onMarkNoteAsRead={markNoteAsRead}
+              onMarkAllNotesAsRead={markAllNotesAsRead}
             />
           ))}
         </div>
