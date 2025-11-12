@@ -105,7 +105,7 @@ export function useBinManager() {
           }));
           setBins(binsWithDates);
         } else {
-          // If no bins exist, save default bins to MongoDB
+          // If no bins exist, save default bins to 
           await updateBins(getDefaultBins());
         }
         

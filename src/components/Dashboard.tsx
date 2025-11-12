@@ -125,7 +125,7 @@ export function Dashboard() {
           {/* Loading placeholder */}
           <div className="text-center py-8">
             <p className="text-gray-500">
-              {isLoading ? 'Loading data from MongoDB...' : 'Loading...'}
+              {isLoading ? 'Loading data from database...' : 'Loading...'}
             </p>
           </div>
         </div>
